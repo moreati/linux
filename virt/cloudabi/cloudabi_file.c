@@ -1,30 +1,22 @@
-/*-
+/*
+ * CloudABI filesystem operations.
+ *
+ * Based on linux/fs/namei.c.
+ *
  * Copyright (c) 2015 Nuxi, https://nuxi.nl/
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
+ * Copyright (C) 1991, 1992  Linus Torvalds
  */
+
+#include <linux/capsicum.h>
+#include <linux/dcache.h>
+#include <linux/fs.h>
+#include <linux/namei.h>
+#include <linux/path.h>
+#include <linux/security.h>
 
 #include "cloudabi_syscalldefs.h"
 #include "cloudabi_syscalls.h"
+#include "cloudabi_util.h"
 
 cloudabi_errno_t cloudabi_sys_file_advise(
     const struct cloudabi_sys_file_advise_args *uap, unsigned long *retval)
@@ -38,10 +30,69 @@ cloudabi_errno_t cloudabi_sys_file_allocate(
 	return CLOUDABI_ENOSYS;
 }
 
+struct dentry *fetch_path(cloudabi_fd_t dfd, const char __user *pathname,
+    size_t pathlen, struct path *path, unsigned int lookup_flags,
+    const struct capsicum_rights *rights) {
+	/* TODO(ed): Implement! */
+	return NULL;
+}
+
 cloudabi_errno_t cloudabi_sys_file_create(
     const struct cloudabi_sys_file_create_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct dentry *dentry;
+	struct path path;
+	int error;
+	unsigned int lookup_flags;
+	struct capsicum_rights rights;
+	umode_t mode;
+
+	switch (uap->type) {
+	case CLOUDABI_FILETYPE_DIRECTORY:
+		lookup_flags = 0;
+		cap_rights_init(&rights, CAP_LOOKUP, CAP_MKDIRAT);
+		break;
+	case CLOUDABI_FILETYPE_FIFO:
+		lookup_flags = LOOKUP_DIRECTORY;
+		cap_rights_init(&rights, CAP_LOOKUP, CAP_MKFIFOAT);
+		break;
+	default:
+		return CLOUDABI_EINVAL;
+	}
+
+retry:
+	dentry = fetch_path(uap->fd, uap->path, uap->pathlen, &path,
+	    lookup_flags, &rights);
+	if (IS_ERR(dentry)) {
+		error = PTR_ERR(dentry);
+		goto out;
+	}
+
+	mode = 0777;
+	if (!IS_POSIXACL(path.dentry->d_inode))
+		mode &= ~current_umask();
+
+	switch (uap->type) {
+	case CLOUDABI_FILETYPE_DIRECTORY:
+		error = security_path_mkdir(&path, dentry, mode);
+		if (error == 0)
+			error = vfs_mkdir(path.dentry->d_inode, dentry, mode);
+		break;
+	case CLOUDABI_FILETYPE_FIFO:
+		mode |= S_IFIFO;
+		error = security_path_mknod(&path, dentry, mode, 0);
+		if (error == 0)
+			error = vfs_mknod(path.dentry->d_inode, dentry, mode,0);
+		break;
+	}
+
+	done_path_create(&path, dentry);
+	if (retry_estale(error, lookup_flags)) {
+		lookup_flags |= LOOKUP_REVAL;
+		goto retry;
+	}
+out:
+	return cloudabi_convert_errno(error);
 }
 
 cloudabi_errno_t cloudabi_sys_file_link(
