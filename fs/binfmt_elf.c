@@ -696,6 +696,9 @@ static int load_elf_binary(struct linux_binprm *bprm)
 	/* First of all, some simple consistency checks */
 	if (memcmp(loc->elf_ex.e_ident, ELFMAG, SELFMAG) != 0)
 		goto out;
+	if (loc->elf_ex.e_ident[EI_OSABI] != ELFOSABI_NONE &&
+	    loc->elf_ex.e_ident[EI_OSABI] != ELFOSABI_LINUX)
+		goto out;
 
 	if (loc->elf_ex.e_type != ET_EXEC && loc->elf_ex.e_type != ET_DYN)
 		goto out;

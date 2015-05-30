@@ -107,6 +107,10 @@ static int is_elf_fdpic(struct elfhdr *hdr, struct file *file)
 {
 	if (memcmp(hdr->e_ident, ELFMAG, SELFMAG) != 0)
 		return 0;
+	if (loc->elf_ex.e_ident[EI_OSABI] != ELFOSABI_NONE &&
+	    loc->elf_ex.e_ident[EI_OSABI] != ELFOSABI_LINUX)
+		return 0;
+
 	if (hdr->e_type != ET_EXEC && hdr->e_type != ET_DYN)
 		return 0;
 	if (!elf_check_arch(hdr) || !elf_check_fdpic(hdr))

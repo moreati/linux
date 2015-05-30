@@ -34,6 +34,9 @@ static int load_em86(struct linux_binprm *bprm)
 
 	if (memcmp(elf_ex.e_ident, ELFMAG, SELFMAG) != 0)
 		return  -ENOEXEC;
+	if (loc->elf_ex.e_ident[EI_OSABI] != ELFOSABI_NONE &&
+	    loc->elf_ex.e_ident[EI_OSABI] != ELFOSABI_LINUX)
+		return -ENOEXEC;
 
 	/* First of all, some simple consistency checks */
 	if ((elf_ex.e_type != ET_EXEC && elf_ex.e_type != ET_DYN) ||

@@ -352,8 +352,9 @@ typedef struct elf64_shdr {
 #define EV_CURRENT	1
 #define EV_NUM		2
 
-#define ELFOSABI_NONE	0
-#define ELFOSABI_LINUX	3
+#define ELFOSABI_NONE		0
+#define ELFOSABI_LINUX		3
+#define ELFOSABI_CLOUDABI	17
 
 #ifndef ELF_OSABI
 #define ELF_OSABI ELFOSABI_NONE
