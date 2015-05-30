@@ -331,6 +331,7 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 #endif
 	start_thread(regs, entry, bprm->p);
 	set_tsk_thread_flag(current, TIF_CLOUDABI);
+	task_set_openat_beneath(current);
 
 	error = 0;
 out:
