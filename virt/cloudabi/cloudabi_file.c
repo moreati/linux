@@ -30,13 +30,6 @@ cloudabi_errno_t cloudabi_sys_file_allocate(
 	return CLOUDABI_ENOSYS;
 }
 
-struct dentry *fetch_path(cloudabi_fd_t dfd, const char __user *pathname,
-    size_t pathlen, struct path *path, unsigned int lookup_flags,
-    const struct capsicum_rights *rights) {
-	/* TODO(ed): Implement! */
-	return NULL;
-}
-
 cloudabi_errno_t cloudabi_sys_file_create(
     const struct cloudabi_sys_file_create_args *uap, unsigned long *retval)
 {
@@ -61,8 +54,8 @@ cloudabi_errno_t cloudabi_sys_file_create(
 	}
 
 retry:
-	dentry = fetch_path(uap->fd, uap->path, uap->pathlen, &path,
-	    lookup_flags, &rights);
+	dentry = user_path_create_fixed_length(uap->fd, uap->path, uap->pathlen,
+	    &path, lookup_flags, &rights);
 	if (IS_ERR(dentry)) {
 		error = PTR_ERR(dentry);
 		goto out;

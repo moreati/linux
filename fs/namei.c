@@ -3572,6 +3572,20 @@ struct dentry *user_path_create(int dfd, const char __user *pathname,
 }
 EXPORT_SYMBOL(user_path_create);
 
+struct dentry *
+user_path_create_fixed_length(int dfd,
+			const char __user *pathname,
+			size_t pathlen,
+			struct path *path,
+			unsigned int lookup_flags,
+			const struct capsicum_rights *rights)
+{
+	/* TODO(ed): Implement. */
+	return user_path_create_rights(dfd, pathname, path, lookup_flags,
+	    rights);
+}
+EXPORT_SYMBOL(user_path_create_fixed_length);
+
 int vfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode, dev_t dev)
 {
 	int error = may_create(dir, dentry);
