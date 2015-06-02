@@ -55,7 +55,7 @@ cloudabi_errno_t cloudabi64_sys_fd_pread(
 	long length;
 
 	length = sys_preadv(uap->fd, (const struct iovec __user *)uap->iov,
-	    uap->iovlen, TOP_BITS(uap->offset), uap->offset);
+	    uap->iovlen, uap->offset, TOP_BITS(uap->offset));
 	if (length < 0)
 		return cloudabi_convert_errno(length);
 	retval[0] = length;
@@ -67,7 +67,7 @@ cloudabi_errno_t cloudabi64_sys_fd_pwrite(
 	long length;
 
 	length = sys_pwritev(uap->fd, (const struct iovec __user *)uap->iov,
-	    uap->iovlen, TOP_BITS(uap->offset), uap->offset);
+	    uap->iovlen, uap->offset, TOP_BITS(uap->offset));
 	if (length < 0)
 		return cloudabi_convert_errno(length);
 	retval[0] = length;
