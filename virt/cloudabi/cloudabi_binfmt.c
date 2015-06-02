@@ -20,6 +20,7 @@
 
 #include <asm/uaccess.h>
 
+#include "cloudabi_util.h"
 #include "cloudabi64_syscalldefs.h"
 
 #if ELF_EXEC_PAGESIZE > PAGE_SIZE
@@ -124,7 +125,7 @@ static int cloudabi_binfmt_init_stack(struct linux_binprm *bprm,
 	memset(&sd, '\0', sizeof(sd));
 	sd.sd_elf_phdr = load_addr + hdr->e_phoff;
 	sd.sd_elf_phdrlen = hdr->e_phnum;
-	sd.sd_thread_id = task_pid_vnr(current),
+	sd.sd_thread_id = cloudabi_gettid(current),
 	get_random_bytes(&sd.sd_random_seed, sizeof(sd.sd_random_seed));
 	/* TODO(ed): Fill in the right number of CPUs. */
 	sd.sd_ncpus = 4;

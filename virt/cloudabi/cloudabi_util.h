@@ -28,6 +28,11 @@
 
 #include "cloudabi_syscalldefs.h"
 
+/* Assertions. */
+#define	cloudabi_assert(expr, reason)	BUG_ON(!(expr))
+
+#define cloudabi_gettid task_pid_vnr
+
 cloudabi_errno_t cloudabi_convert_errno(int);
 
 #endif
