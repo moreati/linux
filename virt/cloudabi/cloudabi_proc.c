@@ -31,7 +31,7 @@
 
 cloudabi_errno_t cloudabi_sys_proc_exit(
     const struct cloudabi_sys_proc_exit_args *uap, unsigned long *retval) {
-	return cloudabi_convert_errno(sys_exit(uap->rval));
+	return cloudabi_convert_errno(sys_exit_group(uap->rval));
 }
 
 cloudabi_errno_t cloudabi_sys_proc_fork(

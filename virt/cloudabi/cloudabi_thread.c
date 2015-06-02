@@ -23,6 +23,8 @@
  * SUCH DAMAGE.
  */
 
+#include <linux/syscalls.h>
+
 #include <asm/current.h>
 #include <asm/prctl.h>
 #include <asm/proto.h>
@@ -34,7 +36,15 @@
 cloudabi_errno_t cloudabi_sys_thread_exit(
     const struct cloudabi_sys_thread_exit_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct cloudabi_sys_lock_unlock_args cloudabi_sys_lock_unlock_args = {
+		.lock = uap->lock,
+	};
+
+        /* Wake up joining thread. */
+	cloudabi_sys_lock_unlock(&cloudabi_sys_lock_unlock_args, NULL);
+
+        /* Terminate the thread. */
+	return cloudabi_convert_errno(sys_exit(0));
 }
 
 cloudabi_errno_t cloudabi_sys_thread_tcb_set(
