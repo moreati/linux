@@ -9,6 +9,7 @@
 
 #include <linux/capsicum.h>
 #include <linux/dcache.h>
+#include <linux/fadvise.h>
 #include <linux/fs.h>
 #include <linux/namei.h>
 #include <linux/path.h>
@@ -23,13 +24,39 @@
 cloudabi_errno_t cloudabi_sys_file_advise(
     const struct cloudabi_sys_file_advise_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	int advice;
+
+	switch (uap->advice) {
+	case CLOUDABI_ADVICE_DONTNEED:
+		advice = POSIX_FADV_DONTNEED;
+		break;
+	case CLOUDABI_ADVICE_NOREUSE:
+		advice = POSIX_FADV_NOREUSE;
+		break;
+	case CLOUDABI_ADVICE_NORMAL:
+		advice = POSIX_FADV_NORMAL;
+		break;
+	case CLOUDABI_ADVICE_RANDOM:
+		advice = POSIX_FADV_RANDOM;
+		break;
+	case CLOUDABI_ADVICE_SEQUENTIAL:
+		advice = POSIX_FADV_SEQUENTIAL;
+		break;
+	case CLOUDABI_ADVICE_WILLNEED:
+		advice = POSIX_FADV_WILLNEED;
+		break;
+	default:
+		return CLOUDABI_EINVAL;
+	}
+	return cloudabi_convert_errno(sys_fadvise64_64(uap->fd, uap->offset,
+	    uap->len, advice));
 }
 
 cloudabi_errno_t cloudabi_sys_file_allocate(
     const struct cloudabi_sys_file_allocate_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	return cloudabi_convert_errno(sys_fallocate(uap->fd, 0, uap->offset,
+	    uap->len));
 }
 
 cloudabi_errno_t cloudabi_sys_file_create(
