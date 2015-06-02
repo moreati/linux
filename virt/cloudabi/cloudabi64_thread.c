@@ -23,11 +23,47 @@
  * SUCH DAMAGE.
  */
 
+#include <linux/sched.h>
+#include <linux/uaccess.h>
+
 #include "cloudabi_syscalldefs.h"
+#include "cloudabi_util.h"
 #include "cloudabi64_syscalls.h"
 
 cloudabi_errno_t cloudabi64_sys_thread_create(
     const struct cloudabi64_sys_thread_create_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	cloudabi64_threadattr_t attr;
+	struct clone4_args clone4_args = {};
+	struct pt_regs *regs;
+	struct task_struct *child;
+	cloudabi_tid_t tid;
+
+	if (copy_from_user(&attr, uap->attr, sizeof(attr)) != 0)
+		return CLOUDABI_EFAULT;
+
+	/* Create a new thread. */
+	child = copy_process(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND |
+	    CLONE_THREAD, &clone4_args, NULL, 0, NULL);
+	if (IS_ERR(child))
+		return cloudabi_convert_errno(PTR_ERR(child));
+	tid = cloudabi_gettid(child);
+
+	/* Set initial registers. */
+	regs = task_pt_regs(child);
+#ifdef __x86_64__
+	/* TODO(ed): This should be solved more elegantly. */
+	regs->sp = rounddown(attr.stack + attr.stack_size, 16) - 8;
+	regs->ip = attr.entry_point;
+	regs->di = tid;
+	regs->si = attr.argument;
+#else
+#error "Unknown architecture"
+#endif
+
+	/* Start execution of new thread. */
+	wake_up_new_task(child);
+
+	retval[0] = tid;
+	return 0;
 }

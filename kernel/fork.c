@@ -1238,11 +1238,11 @@ init_task_pid(struct task_struct *task, enum pid_type type, struct pid *pid)
  * parts of the process environment (as per the clone
  * flags). The actual kick-off is left to the caller.
  */
-static struct task_struct *copy_process(u64 clone_flags,
-					struct clone4_args *args,
-					struct pid *pid,
-					int trace,
-					struct clonefd_setup *clonefd_setup)
+struct task_struct *copy_process(u64 clone_flags,
+				 struct clone4_args *args,
+				 struct pid *pid,
+				 int trace,
+				 struct clonefd_setup *clonefd_setup)
 {
 	int retval;
 	struct task_struct *p;
@@ -1659,6 +1659,7 @@ bad_fork_free:
 fork_out:
 	return ERR_PTR(retval);
 }
+EXPORT_SYMBOL(copy_process);
 
 static inline void init_idle_pids(struct pid_link *links)
 {
