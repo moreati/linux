@@ -32,6 +32,8 @@
 #define alignof _Alignof
 #define static_assert _Static_assert
 
+#define UINT64_C(v) v##ULL
+
 /* Import machine-independent CloudABI definitions. */
 #include "syscalldefs_mi.h"
 
