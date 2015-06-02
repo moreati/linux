@@ -65,7 +65,6 @@ cloudabi_errno_t cloudabi_sys_clock_res_get(
 		hrtimer_get_res(CLOCK_MONOTONIC, &ts);
 		break;
 	case CLOUDABI_CLOCK_REALTIME:
-		ktime_get_real_ts(&ts);
 		hrtimer_get_res(CLOCK_REALTIME, &ts);
 		break;
 	default:
