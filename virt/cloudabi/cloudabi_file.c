@@ -13,6 +13,8 @@
 #include <linux/namei.h>
 #include <linux/path.h>
 #include <linux/security.h>
+#include <linux/syscalls.h>
+#include <linux/uaccess.h>
 
 #include "cloudabi_syscalldefs.h"
 #include "cloudabi_syscalls.h"
@@ -97,7 +99,60 @@ cloudabi_errno_t cloudabi_sys_file_link(
 cloudabi_errno_t cloudabi_sys_file_open(
     const struct cloudabi_sys_file_open_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	cloudabi_fdstat_t fds;
+	long fd;
+	int oflags;
+
+	/* Copy in initial file descriptor properties. */
+	if (copy_from_user(&fds, uap->fds, sizeof(fds)) != 0)
+		return CLOUDABI_EFAULT;
+
+	/* Translate flags. */
+	oflags = O_NOCTTY;
+#define	COPY_FLAG(flag) do {						\
+	if (uap->oflags & CLOUDABI_O_##flag)				\
+		oflags |= O_##flag;					\
+} while (0)
+	COPY_FLAG(CREAT);
+	COPY_FLAG(DIRECTORY);
+	COPY_FLAG(EXCL);
+	COPY_FLAG(TRUNC);
+#undef COPY_FLAG
+#define	COPY_FLAG(flag) do {						\
+	if (fds.fs_flags & CLOUDABI_FDFLAG_##flag)			\
+		oflags |= O_##flag;					\
+} while (0)
+	COPY_FLAG(APPEND);
+	COPY_FLAG(DSYNC);
+	COPY_FLAG(NONBLOCK);
+#undef COPY_FLAG
+	if (fds.fs_flags & (CLOUDABI_FDFLAG_SYNC | CLOUDABI_FDFLAG_RSYNC))
+		oflags |= O_SYNC;
+	if ((uap->fd & CLOUDABI_LOOKUP_SYMLINK_FOLLOW) == 0)
+		oflags |= O_NOFOLLOW;
+
+	/* Roughly convert rights to open() access mode. */
+	if ((fds.fs_rights_base &
+	    (CLOUDABI_RIGHT_FD_READ | CLOUDABI_RIGHT_FILE_READDIR)) != 0 &&
+	    (fds.fs_rights_base & CLOUDABI_RIGHT_FD_WRITE) != 0)
+		oflags |= O_RDWR;
+	else if ((fds.fs_rights_base &
+	    (CLOUDABI_RIGHT_FD_READ | CLOUDABI_RIGHT_FILE_READDIR)) != 0)
+		oflags |= O_RDONLY;
+	else if ((fds.fs_rights_base & CLOUDABI_RIGHT_FD_WRITE) != 0)
+		oflags |= O_WRONLY;
+	else if ((fds.fs_rights_base &
+	    (CLOUDABI_RIGHT_PROC_EXEC | CLOUDABI_RIGHT_FILE_OPEN)) != 0)
+		oflags |= O_RDONLY;
+	else
+		return CLOUDABI_EINVAL;
+
+	/* TODO(ed): Respect path length! */
+	fd = sys_openat(uap->fd, uap->path, oflags, 0777);
+	if (fd < 0)
+		return cloudabi_convert_errno(fd);
+	retval[0] = fd;
+	return 0;
 }
 
 cloudabi_errno_t cloudabi_sys_file_readdir(

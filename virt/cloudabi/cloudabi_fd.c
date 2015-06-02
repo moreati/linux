@@ -23,6 +23,7 @@
  * SUCH DAMAGE.
  */
 
+#include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/syscalls.h>
 #include <linux/uio.h>
@@ -31,7 +32,8 @@
 #include "cloudabi_syscalls.h"
 
 cloudabi_errno_t cloudabi_sys_fd_close(
-    const struct cloudabi_sys_fd_close_args *uap, unsigned long *retval) {
+    const struct cloudabi_sys_fd_close_args *uap, unsigned long *retval)
+{
 	return cloudabi_convert_errno(sys_close(uap->fd));
 }
 
@@ -41,7 +43,8 @@ cloudabi_errno_t cloudabi_sys_fd_create1(
 }
 
 cloudabi_errno_t cloudabi_sys_fd_create2(
-    const struct cloudabi_sys_fd_create2_args *uap, unsigned long *retval) {
+    const struct cloudabi_sys_fd_create2_args *uap, unsigned long *retval)
+{
 	/* TODO(ed): Add support for socket pairs. */
 	switch (uap->type) {
 	case CLOUDABI_FILETYPE_FIFO: {
@@ -66,7 +69,8 @@ cloudabi_errno_t cloudabi_sys_fd_datasync(
 }
 
 cloudabi_errno_t cloudabi_sys_fd_dup(
-    const struct cloudabi_sys_fd_dup_args *uap, unsigned long *retval) {
+    const struct cloudabi_sys_fd_dup_args *uap, unsigned long *retval)
+{
 	long newfd;
 
 	newfd = sys_dup(uap->from);
@@ -77,7 +81,8 @@ cloudabi_errno_t cloudabi_sys_fd_dup(
 }
 
 cloudabi_errno_t cloudabi_sys_fd_replace(
-    const struct cloudabi_sys_fd_replace_args *uap, unsigned long *retval) {
+    const struct cloudabi_sys_fd_replace_args *uap, unsigned long *retval)
+{
 	long newfd;
 
 	/* TODO(ed): This should disallow dupping to unused descriptors. */
@@ -88,7 +93,8 @@ cloudabi_errno_t cloudabi_sys_fd_replace(
 }
 
 cloudabi_errno_t cloudabi_sys_fd_seek(
-    const struct cloudabi_sys_fd_seek_args *uap, unsigned long *retval) {
+    const struct cloudabi_sys_fd_seek_args *uap, unsigned long *retval)
+{
 	unsigned int whence;
 	long offset;
 
@@ -106,7 +112,7 @@ cloudabi_errno_t cloudabi_sys_fd_seek(
 		return CLOUDABI_EINVAL;
 	}
 
-	offset = sys_lseek(uap->fd, uap->whence, uap->offset);
+	offset = sys_lseek(uap->fd, uap->offset, uap->whence);
 	if (offset < 0)
 		return cloudabi_convert_errno(offset);
 	retval[0] = offset;
@@ -114,16 +120,47 @@ cloudabi_errno_t cloudabi_sys_fd_seek(
 }
 
 cloudabi_errno_t cloudabi_sys_fd_stat_get(
-    const struct cloudabi_sys_fd_stat_get_args *uap, unsigned long *retval) {
-	return CLOUDABI_ENOSYS;
+    const struct cloudabi_sys_fd_stat_get_args *uap, unsigned long *retval)
+{
+	cloudabi_fdstat_t fsb = {};
+	struct fd fd;
+	struct file *file;
+
+	fd = fdget_raw(uap->fd);
+	if (fd.file == NULL)
+		return CLOUDABI_EBADF;
+	file = fd.file;
+
+	/* TODO(ed): Set the file type. */
+	fsb.fs_filetype = CLOUDABI_FILETYPE_DIRECTORY;
+
+	/* Convert file descriptor flags. */
+	if ((file->f_flags & O_APPEND) != 0)
+		fsb.fs_flags |= CLOUDABI_FDFLAG_APPEND;
+	if ((file->f_flags & O_DSYNC) != 0)
+		fsb.fs_flags |= CLOUDABI_FDFLAG_DSYNC;
+	if ((file->f_flags & O_NONBLOCK) != 0)
+		fsb.fs_flags |= CLOUDABI_FDFLAG_NONBLOCK;
+	if ((file->f_flags & O_SYNC) != 0)
+		fsb.fs_flags |= CLOUDABI_FDFLAG_SYNC;
+
+	/* TODO(ed): Set the right value. */
+	fsb.fs_rights_base = ~0;
+	fsb.fs_rights_inheriting = ~0;
+
+	fdput(fd);
+	return copy_to_user(uap->buf, &fsb, sizeof(fsb)) != 0 ?
+	    CLOUDABI_EFAULT : 0;
 }
 
 cloudabi_errno_t cloudabi_sys_fd_stat_put(
-    const struct cloudabi_sys_fd_stat_put_args *uap, unsigned long *retval) {
+    const struct cloudabi_sys_fd_stat_put_args *uap, unsigned long *retval)
+{
 	return CLOUDABI_ENOSYS;
 }
 
 cloudabi_errno_t cloudabi_sys_fd_sync(
-    const struct cloudabi_sys_fd_sync_args *uap, unsigned long *retval) {
+    const struct cloudabi_sys_fd_sync_args *uap, unsigned long *retval)
+{
 	return cloudabi_convert_errno(sys_fsync(uap->fd));
 }
