@@ -199,7 +199,6 @@ static LIST_HEAD(, futex_condvar) futex_condvar_list =
 /* Portability. */
 typedef struct task_struct *thread_t;
 #define	SCARG(uap, arg)			((uap)->arg)
-#define	UINT64_MAX			(~(uint64_t)0)
 
 /* Utility functions. */
 static void futex_lock_assert(const struct futex_lock *);
