@@ -49,7 +49,29 @@ convert_mprot(cloudabi_mprot_t in)
 cloudabi_errno_t cloudabi_sys_mem_advise(
     const struct cloudabi_sys_mem_advise_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	int behavior;
+
+	switch (uap->advice) {
+	case CLOUDABI_ADVICE_DONTNEED:
+		behavior = MADV_DONTNEED;
+		break;
+	case CLOUDABI_ADVICE_NORMAL:
+		behavior = MADV_NORMAL;
+		break;
+	case CLOUDABI_ADVICE_RANDOM:
+		behavior = MADV_RANDOM;
+		break;
+	case CLOUDABI_ADVICE_SEQUENTIAL:
+		behavior = MADV_SEQUENTIAL;
+		break;
+	case CLOUDABI_ADVICE_WILLNEED:
+		behavior = MADV_WILLNEED;
+		break;
+	default:
+		return CLOUDABI_EINVAL;
+	}
+	return cloudabi_convert_errno(
+	    sys_madvise((unsigned long)uap->addr, uap->len, behavior));
 }
 
 cloudabi_errno_t cloudabi_sys_mem_lock(
