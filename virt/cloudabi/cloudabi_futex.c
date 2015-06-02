@@ -176,6 +176,8 @@ struct futex_lock {
 struct futex_waiter {
 	/* Thread ID. */
 	cloudabi_tid_t			fw_tid;
+	/* Condition variable used for waiting. */
+	wait_queue_head_t		fw_wait;
 
 	/* Queue this waiter is currently placed in. */
 	struct futex_queue *		fw_queue;
@@ -782,6 +784,7 @@ futex_queue_sleep(struct futex_queue *fq, struct futex_lock *fl,
     cloudabi_timestamp_t timeout, cloudabi_timestamp_t precision)
 {
 
+	/* TODO(ed): Implement! */
 	return (-ENOSYS);
 }
 
@@ -813,7 +816,7 @@ futex_queue_wake_up_all(struct futex_queue *fq)
 	STAILQ_FOREACH(fw, &fq->fq_list, fw_next) {
 		fw->fw_locked = true;
 		fw->fw_queue = NULL;
-		/* TODO(ed): cv_signal(&fw->fw_wait); */
+		wake_up(&fw->fw_wait);
 	}
 
 	STAILQ_INIT(&fq->fq_list);
@@ -832,7 +835,7 @@ futex_queue_wake_up_best(struct futex_queue *fq)
 	fw = STAILQ_FIRST(&fq->fq_list);
 	fw->fw_locked = true;
 	fw->fw_queue = NULL;
-	/* TODO(ed): cv_signal(&fw->fw_wait); */
+	wake_up(&fw->fw_wait);
 
 	STAILQ_REMOVE_HEAD(&fq->fq_list, fw_next);
 	--fq->fq_count;
@@ -848,7 +851,7 @@ futex_queue_wake_up_donate(struct futex_queue *fq, unsigned int nwaiters)
 		return;
 	fw->fw_locked = false;
 	fw->fw_queue = NULL;
-	/* TODO(ed): cv_signal(&fw->fw_wait); */
+	wake_up(&fw->fw_wait);
 
 	STAILQ_REMOVE_HEAD(&fq->fq_list, fw_next);
 	--fq->fq_count;
