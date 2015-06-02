@@ -57,5 +57,5 @@ cloudabi_errno_t cloudabi_sys_thread_tcb_set(
 cloudabi_errno_t cloudabi_sys_thread_yield(
     const void *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	return cloudabi_convert_errno(sys_sched_yield());
 }
