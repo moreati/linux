@@ -29,6 +29,50 @@
 #include "cloudabi_syscalls.h"
 #include "cloudabi_util.h"
 
+/* Converts CloudABI's signal numbers to Linux's. */
+static cloudabi_errno_t
+convert_signal(cloudabi_signal_t in, int *out)
+{
+	static const int signals[] = {
+		[CLOUDABI_SIGABRT] = SIGABRT,
+		[CLOUDABI_SIGALRM] = SIGALRM,
+		[CLOUDABI_SIGBUS] = SIGBUS,
+		[CLOUDABI_SIGCHLD] = SIGCHLD,
+		[CLOUDABI_SIGCONT] = SIGCONT,
+		[CLOUDABI_SIGFPE] = SIGFPE,
+		[CLOUDABI_SIGHUP] = SIGHUP,
+		[CLOUDABI_SIGILL] = SIGILL,
+		[CLOUDABI_SIGINT] = SIGINT,
+		[CLOUDABI_SIGKILL] = SIGKILL,
+		[CLOUDABI_SIGPIPE] = SIGPIPE,
+		[CLOUDABI_SIGQUIT] = SIGQUIT,
+		[CLOUDABI_SIGSEGV] = SIGSEGV,
+		[CLOUDABI_SIGSTOP] = SIGSTOP,
+		[CLOUDABI_SIGSYS] = SIGSYS,
+		[CLOUDABI_SIGTERM] = SIGTERM,
+		[CLOUDABI_SIGTRAP] = SIGTRAP,
+		[CLOUDABI_SIGTSTP] = SIGTSTP,
+		[CLOUDABI_SIGTTIN] = SIGTTIN,
+		[CLOUDABI_SIGTTOU] = SIGTTOU,
+		[CLOUDABI_SIGURG] = SIGURG,
+		[CLOUDABI_SIGUSR1] = SIGUSR1,
+		[CLOUDABI_SIGUSR2] = SIGUSR2,
+		[CLOUDABI_SIGVTALRM] = SIGVTALRM,
+		[CLOUDABI_SIGXCPU] = SIGXCPU,
+		[CLOUDABI_SIGXFSZ] = SIGXFSZ,
+	};
+
+	if ((in < sizeof(signals) / sizeof(signals[0]) && signals[in] != 0) ||
+	    in == 0) {
+		/* Valid signal mapping. */
+		*out = signals[in];
+		return (0);
+	} else {
+		/* Invalid signal. */
+		return (CLOUDABI_EINVAL);
+	}
+}
+
 cloudabi_errno_t cloudabi_sys_proc_exit(
     const struct cloudabi_sys_proc_exit_args *uap, unsigned long *retval) {
 	return cloudabi_convert_errno(sys_exit_group(uap->rval));
@@ -41,5 +85,19 @@ cloudabi_errno_t cloudabi_sys_proc_fork(
 
 cloudabi_errno_t cloudabi_sys_proc_raise(
     const struct cloudabi_sys_proc_raise_args *uap, unsigned long *retval) {
-	return CLOUDABI_ENOSYS;
+	struct k_sigaction sigdfl = {
+		.sa = {
+			.sa_handler = SIG_DFL,
+		},
+	};
+	int signum;
+	cloudabi_errno_t error;
+
+	error = convert_signal(uap->sig, &signum);
+	if (error != 0)
+		return error;
+
+	/* Restore to default signal action and send signal. */
+	do_sigaction(signum, &sigdfl, NULL);
+	return cloudabi_convert_errno(sys_kill(task_tgid_vnr(current), signum));
 }
