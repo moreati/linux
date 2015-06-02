@@ -23,8 +23,12 @@
  * SUCH DAMAGE.
  */
 
+#include <linux/net.h>
+#include <linux/syscalls.h>
+
 #include "cloudabi_syscalldefs.h"
 #include "cloudabi_syscalls.h"
+#include "cloudabi_util.h"
 
 cloudabi_errno_t cloudabi_sys_sock_accept(
     const struct cloudabi_sys_sock_accept_args *uap, unsigned long *retval)
@@ -47,13 +51,28 @@ cloudabi_errno_t cloudabi_sys_sock_connect(
 cloudabi_errno_t cloudabi_sys_sock_listen(
     const struct cloudabi_sys_sock_listen_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	return cloudabi_convert_errno(sys_listen(uap->s, uap->backlog));
 }
 
 cloudabi_errno_t cloudabi_sys_sock_shutdown(
     const struct cloudabi_sys_sock_shutdown_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	int how;
+
+	switch (uap->how) {
+	case CLOUDABI_SHUT_RD:
+		how = SHUT_RD;
+		break;
+	case CLOUDABI_SHUT_WR:
+		how = SHUT_WR;
+		break;
+	case CLOUDABI_SHUT_RD | CLOUDABI_SHUT_WR:
+		how = SHUT_RDWR;
+		break;
+	default:
+		return CLOUDABI_EINVAL;
+	}
+	return cloudabi_convert_errno(sys_shutdown(uap->s, how));
 }
 
 cloudabi_errno_t cloudabi_sys_sock_stat_get(
