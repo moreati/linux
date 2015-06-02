@@ -23,17 +23,79 @@
  * SUCH DAMAGE.
  */
 
+#include <linux/hrtimer.h>
+#include <linux/time.h>
+#include <linux/timekeeping.h>
+
 #include "cloudabi_syscalldefs.h"
 #include "cloudabi_syscalls.h"
+#include "cloudabi_util.h"
+
+/* Converts a struct timespec to a CloudABI timestamp. */
+static cloudabi_errno_t convert_timespec_to_timestamp(const struct timespec *in,
+    cloudabi_timestamp_t *out)
+{
+	cloudabi_timestamp_t s, ns;
+
+	/* Timestamps from before the Epoch cannot be expressed. */
+	if (in->tv_sec < 0)
+		return CLOUDABI_EOVERFLOW;
+
+	s = in->tv_sec;
+	ns = in->tv_nsec;
+	if (s > UINT64_MAX / NSEC_PER_SEC || (s == UINT64_MAX / NSEC_PER_SEC &&
+	    ns > UINT64_MAX % NSEC_PER_SEC)) {
+		/* Addition of seconds would cause an overflow. */
+		return CLOUDABI_EOVERFLOW;
+	}
+
+	*out = s * NSEC_PER_SEC + ns;
+	return 0;
+}
 
 cloudabi_errno_t cloudabi_sys_clock_res_get(
     const struct cloudabi_sys_clock_res_get_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct timespec ts;
+	cloudabi_timestamp_t cts;
+	cloudabi_errno_t error;
+
+	switch (uap->clock_id) {
+	case CLOUDABI_CLOCK_MONOTONIC:
+		hrtimer_get_res(CLOCK_MONOTONIC, &ts);
+		break;
+	case CLOUDABI_CLOCK_REALTIME:
+		ktime_get_real_ts(&ts);
+		hrtimer_get_res(CLOCK_REALTIME, &ts);
+		break;
+	default:
+		return CLOUDABI_EINVAL;
+	}
+	error = convert_timespec_to_timestamp(&ts, &cts);
+	if (error == 0)
+		retval[0] = cts;
+	return error;
 }
 
 cloudabi_errno_t cloudabi_sys_clock_time_get(
     const struct cloudabi_sys_clock_time_get_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct timespec ts;
+	cloudabi_timestamp_t cts;
+	cloudabi_errno_t error;
+
+	switch (uap->clock_id) {
+	case CLOUDABI_CLOCK_MONOTONIC:
+		ktime_get_ts(&ts);
+		break;
+	case CLOUDABI_CLOCK_REALTIME:
+		ktime_get_real_ts(&ts);
+		break;
+	default:
+		return CLOUDABI_EINVAL;
+	}
+	error = convert_timespec_to_timestamp(&ts, &cts);
+	if (error == 0)
+		retval[0] = cts;
+	return error;
 }

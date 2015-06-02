@@ -28,6 +28,9 @@
 
 #include "cloudabi_syscalldefs.h"
 
+/* Limits. */
+#define UINT64_MAX (~(uint64_t)0)
+
 /* Assertions. */
 #define cloudabi_assert(expr, reason) BUG_ON(!(expr))
 
