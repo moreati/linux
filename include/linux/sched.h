@@ -132,7 +132,6 @@ struct fs_struct;
 struct perf_event_context;
 struct blk_plug;
 struct filename;
-struct clonefd_setup;
 
 #define VMACACHE_BITS 2
 #define VMACACHE_SIZE (1U << VMACACHE_BITS)
@@ -2537,6 +2536,15 @@ extern int do_execveat(int, struct filename *,
 		       const char __user * const __user *,
 		       const char __user * const __user *,
 		       int);
+struct clonefd_setup {
+	int fd;
+	struct file *file;
+};
+#ifdef CONFIG_CLONEFD
+void clonefd_install_fd(struct clone4_args *, struct clonefd_setup *);
+#else
+static inline void clonefd_install_fd(struct clone4_args *args, struct clonefd_setup *setup) {}
+#endif
 extern struct task_struct *copy_process(u64, struct clone4_args *, struct pid *, int, struct clonefd_setup *);
 extern long do_fork(unsigned long, unsigned long, unsigned long, int __user *, int __user *);
 struct task_struct *fork_idle(int);

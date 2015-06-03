@@ -80,7 +80,35 @@ cloudabi_errno_t cloudabi_sys_proc_exit(
 
 cloudabi_errno_t cloudabi_sys_proc_fork(
     const void *uap, unsigned long *retval) {
-	return CLOUDABI_ENOSYS;
+	struct clone4_args clone4_args = {};
+	struct clonefd_setup clonefd_setup;
+	struct pt_regs *regs;
+	struct task_struct *child;
+	cloudabi_tid_t tid;
+
+	/* Create a new thread. */
+	child = copy_process(CLONE_FD, &clone4_args, NULL, 0, &clonefd_setup);
+	if (IS_ERR(child))
+		return cloudabi_convert_errno(PTR_ERR(child));
+	tid = cloudabi_gettid(child);
+
+	/* Return the new thread ID to the child process. */
+	regs = task_pt_regs(child);
+#ifdef __x86_64__
+	/* TODO(ed): This should be solved more elegantly. */
+	regs->di = CLOUDABI_PROCESS_CHILD;
+	regs->si = tid;
+#else
+#error "Unknown architecture"
+#endif
+
+	/* Start execution of new thread. */
+	clonefd_install_fd(&clone4_args, &clonefd_setup);
+	wake_up_new_task(child);
+
+	/* Return the new file descriptor to the parent process. */
+	retval[0] = clonefd_setup.fd;
+	return 0;
 }
 
 cloudabi_errno_t cloudabi_sys_proc_raise(
