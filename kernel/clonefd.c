@@ -223,7 +223,7 @@ int clonefd_do_clone(u64 clone_flags, struct task_struct *p,
 /* Clean up clonefd information after a partially complete clone */
 void clonefd_cleanup_failed_clone(struct clonefd_setup *setup)
 {
-	if (setup->file) {
+	if (setup != NULL && setup->file) {
 		put_unused_fd(setup->fd);
 		kfree(setup->file->private_data);
 		fput(setup->file);
