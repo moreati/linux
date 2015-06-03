@@ -282,7 +282,19 @@ cloudabi_errno_t cloudabi_sys_file_stat_fget(
 cloudabi_errno_t cloudabi_sys_file_stat_fput(
     const struct cloudabi_sys_file_stat_fput_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	cloudabi_filestat_t fs;
+
+	if (copy_from_user(&fs, uap->buf, sizeof(fs)) != 0)
+		return CLOUDABI_EFAULT;
+
+	if ((uap->flags & CLOUDABI_FILESTAT_SIZE) != 0) {
+		/* Call into sys_ftruncate() for file truncation. */
+		if ((uap->flags & ~CLOUDABI_FILESTAT_SIZE) != 0)
+			return (EINVAL);
+		return cloudabi_convert_errno(
+		    sys_ftruncate(uap->fd, fs.st_size));
+	}
+	return CLOUDABI_EINVAL;
 }
 
 cloudabi_errno_t cloudabi_sys_file_stat_get(
