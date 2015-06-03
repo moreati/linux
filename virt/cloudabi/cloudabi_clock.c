@@ -32,25 +32,44 @@
 #include "cloudabi_util.h"
 
 /* Converts a struct timespec to a CloudABI timestamp. */
-static cloudabi_errno_t convert_timespec_to_timestamp(const struct timespec *in,
+static int convert_timespec_to_timestamp(const struct timespec *in,
     cloudabi_timestamp_t *out)
 {
 	cloudabi_timestamp_t s, ns;
 
 	/* Timestamps from before the Epoch cannot be expressed. */
 	if (in->tv_sec < 0)
-		return CLOUDABI_EOVERFLOW;
+		return -EOVERFLOW;
 
 	s = in->tv_sec;
 	ns = in->tv_nsec;
 	if (s > UINT64_MAX / NSEC_PER_SEC || (s == UINT64_MAX / NSEC_PER_SEC &&
 	    ns > UINT64_MAX % NSEC_PER_SEC)) {
 		/* Addition of seconds would cause an overflow. */
-		return CLOUDABI_EOVERFLOW;
+		return -EOVERFLOW;
 	}
 
 	*out = s * NSEC_PER_SEC + ns;
 	return 0;
+}
+
+/* Fetches the time value of a clock. */
+int cloudabi_clock_time_get(cloudabi_clockid_t clock_id,
+    cloudabi_timestamp_t *ret)
+{
+	struct timespec ts;
+
+	switch (clock_id) {
+	case CLOUDABI_CLOCK_MONOTONIC:
+		ktime_get_ts(&ts);
+		break;
+	case CLOUDABI_CLOCK_REALTIME:
+		ktime_get_real_ts(&ts);
+		break;
+	default:
+		return -EINVAL;
+	}
+	return convert_timespec_to_timestamp(&ts, ret);
 }
 
 cloudabi_errno_t cloudabi_sys_clock_res_get(
@@ -58,7 +77,7 @@ cloudabi_errno_t cloudabi_sys_clock_res_get(
 {
 	struct timespec ts;
 	cloudabi_timestamp_t cts;
-	cloudabi_errno_t error;
+	int error;
 
 	switch (uap->clock_id) {
 	case CLOUDABI_CLOCK_MONOTONIC:
@@ -73,7 +92,7 @@ cloudabi_errno_t cloudabi_sys_clock_res_get(
 	error = convert_timespec_to_timestamp(&ts, &cts);
 	if (error == 0)
 		retval[0] = cts;
-	return error;
+	return cloudabi_convert_errno(error);
 }
 
 cloudabi_errno_t cloudabi_sys_clock_time_get(
@@ -81,7 +100,7 @@ cloudabi_errno_t cloudabi_sys_clock_time_get(
 {
 	struct timespec ts;
 	cloudabi_timestamp_t cts;
-	cloudabi_errno_t error;
+	int error;
 
 	switch (uap->clock_id) {
 	case CLOUDABI_CLOCK_MONOTONIC:
@@ -96,5 +115,5 @@ cloudabi_errno_t cloudabi_sys_clock_time_get(
 	error = convert_timespec_to_timestamp(&ts, &cts);
 	if (error == 0)
 		retval[0] = cts;
-	return error;
+	return cloudabi_convert_errno(error);
 }

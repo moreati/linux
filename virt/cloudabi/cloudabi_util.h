@@ -28,6 +28,8 @@
 
 #include "cloudabi_syscalldefs.h"
 
+struct task_struct;
+
 /* Limits. */
 #define UINT64_MAX (~(uint64_t)0)
 
@@ -37,5 +39,22 @@
 #define cloudabi_gettid task_pid_vnr
 
 cloudabi_errno_t cloudabi_convert_errno(int);
+
+/* Fetches the time value of a clock. */
+int cloudabi_clock_time_get(cloudabi_clockid_t, cloudabi_timestamp_t *);
+
+/*
+ * Blocking futex functions.
+ *
+ * These functions are called by CloudABI's polling system calls to
+ * sleep on a lock or condition variable.
+ */
+int cloudabi_futex_condvar_wait(struct task_struct *, cloudabi_condvar_t *,
+    cloudabi_lock_t *, cloudabi_clockid_t, cloudabi_timestamp_t,
+    cloudabi_timestamp_t);
+int cloudabi_futex_lock_rdlock(struct task_struct *, cloudabi_lock_t *,
+    cloudabi_clockid_t, cloudabi_timestamp_t, cloudabi_timestamp_t);
+int cloudabi_futex_lock_wrlock(struct task_struct *, cloudabi_lock_t *,
+    cloudabi_clockid_t, cloudabi_timestamp_t, cloudabi_timestamp_t);
 
 #endif

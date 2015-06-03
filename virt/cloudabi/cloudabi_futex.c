@@ -111,6 +111,8 @@ struct futex_waiter;
 #define	STAILQ_INIT		INIT_LIST_HEAD
 #define	STAILQ_INSERT_TAIL(head, elm, field) \
     list_add_tail(&(elm)->field, head)
+#define	STAILQ_REMOVE(head, elm, type, field) \
+	list_del(&(elm)->field)
 #define	STAILQ_REMOVE_HEAD(head, field) \
     list_del((head)->next)
 
@@ -779,13 +781,111 @@ futex_queue_init(struct futex_queue *fq)
 }
 
 static int
+futex_queue_wait(wait_queue_head_t *q)
+{
+	DEFINE_WAIT(wait);
+
+	prepare_to_wait(q, &wait, TASK_INTERRUPTIBLE);
+	spin_unlock(&futex_global_lock);
+	schedule();
+	spin_lock(&futex_global_lock);
+	finish_wait(q, &wait);
+	if (signal_pending(current))
+		return (-ERESTARTSYS);
+	return (0);
+}
+
+static int
+futex_queue_timedwait(wait_queue_head_t *q, unsigned long jiffies)
+{
+	DEFINE_WAIT(wait);
+	long ret;
+
+	prepare_to_wait(q, &wait, TASK_INTERRUPTIBLE);
+	spin_unlock(&futex_global_lock);
+	ret = schedule_timeout(jiffies);
+	spin_lock(&futex_global_lock);
+	finish_wait(q, &wait);
+	if (signal_pending(current))
+		return (-ERESTARTSYS);
+	if (ret == 0)
+		return (-ETIMEDOUT);
+	return (0);
+}
+
+static int
 futex_queue_sleep(struct futex_queue *fq, struct futex_lock *fl,
     struct futex_waiter *fw, thread_t td, cloudabi_clockid_t clock_id,
     cloudabi_timestamp_t timeout, cloudabi_timestamp_t precision)
 {
+	struct timespec ts;
+	cloudabi_timestamp_t now;
+	unsigned long jiffies;
+	int error;
 
-	/* TODO(ed): Implement! */
-	return (-ENOSYS);
+	/* Initialize futex_waiter object. */
+	fw->fw_tid = cloudabi_gettid(td);
+	fw->fw_locked = false;
+	futex_queue_init(&fw->fw_donated);
+
+	/* Place object in the queue. */
+	fw->fw_queue = fq;
+	STAILQ_INSERT_TAIL(&fq->fq_list, fw, fw_next);
+	++fq->fq_count;
+
+	init_waitqueue_head(&fw->fw_wait);
+	++fl->fl_waitcount;
+
+	/* Wait respecting the timeout. */
+	futex_lock_assert(fl);
+	do {
+		/* Fetch current time. */
+		error = cloudabi_clock_time_get(clock_id, &now);
+		if (error != 0)
+			break;
+		if (now >= timeout) {
+			error = -EAGAIN;
+			break;
+		}
+
+		/* Convert to jiffies. */
+		ts.tv_sec = (timeout - now) / 1000000000;
+		ts.tv_nsec = (timeout - now) % 1000000000;
+		jiffies = timespec_to_jiffies(&ts);
+
+		/* Wait. */
+		error = futex_queue_timedwait(&fw->fw_wait, jiffies);
+		if (error != 0)
+			break;
+	} while (fw->fw_queue == fq);
+	futex_lock_assert(fl);
+	if ((error == 0 || error == -ETIMEDOUT) &&
+	    fw->fw_queue != NULL && fw->fw_queue != fq) {
+		/*
+		 * We got signalled, but observed a timeout while
+		 * waiting to reacquire the lock. In other words, we
+		 * didn't actually time out. Go back to sleep and wait
+		 * for the lock to be reacquired.
+		 */
+		do {
+			error = futex_queue_wait(&fw->fw_wait);
+		} while (error == 0 && fw->fw_queue != NULL);
+		futex_lock_assert(fl);
+	}
+
+	--fl->fl_waitcount;
+
+	fq = fw->fw_queue;
+	if (fq == NULL) {
+		/* Thread got dequeued, so we've slept successfully. */
+		return (0);
+	}
+
+	/* Thread is still enqueued. Remove it. */
+	cloudabi_assert(error != 0, ("Woken up thread is still enqueued"));
+	STAILQ_REMOVE(&fq->fq_list, fw, futex_waiter, fw_next);
+	--fq->fq_count;
+	return (error);
 }
 
 /* Moves up to nwaiters waiters from one queue to another. */
