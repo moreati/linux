@@ -10,6 +10,7 @@
 #include <linux/capsicum.h>
 #include <linux/dcache.h>
 #include <linux/fadvise.h>
+#include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/namei.h>
 #include <linux/path.h>
@@ -200,10 +201,64 @@ cloudabi_errno_t cloudabi_sys_file_rename(
 	return CLOUDABI_ENOSYS;
 }
 
+/* Converts a struct timespec to a timestamp in nanoseconds since the Epoch. */
+static cloudabi_timestamp_t
+convert_timestamp(const struct timespec *ts)
+{
+	cloudabi_timestamp_t s, ns;
+
+	/* Timestamps from before the Epoch cannot be expressed. */
+	if (ts->tv_sec < 0)
+		return 0;
+
+	s = ts->tv_sec;
+	ns = ts->tv_nsec;
+	if (s > UINT64_MAX / NSEC_PER_SEC || (s == UINT64_MAX / NSEC_PER_SEC &&
+	    ns > UINT64_MAX % NSEC_PER_SEC)) {
+		/* Addition of seconds would cause an overflow. */
+		ns = UINT64_MAX;
+	} else {
+		ns += s * NSEC_PER_SEC;
+	}
+	return ns;
+}
+
+/* Converts a Linux stat structure to a CloudABI stat structure. */
+static void
+convert_stat(const struct kstat *sb, cloudabi_filestat_t *csb)
+{
+	cloudabi_filestat_t res = {
+		.st_dev		= sb->dev,
+		.st_ino		= sb->ino,
+		.st_nlink	= sb->nlink,
+		.st_size	= sb->size,
+		.st_atim	= convert_timestamp(&sb->atime),
+		.st_mtim	= convert_timestamp(&sb->mtime),
+		.st_ctim	= convert_timestamp(&sb->ctime),
+	};
+
+	*csb = res;
+}
+
 cloudabi_errno_t cloudabi_sys_file_stat_fget(
     const struct cloudabi_sys_file_stat_fget_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct fd fd;
+	struct kstat sb;
+	cloudabi_filestat_t csb;
+	int error;
+
+	fd = fdgetr_raw(uap->fd, CAP_FSTAT);
+	if (IS_ERR(fd.file))
+		return cloudabi_convert_errno(PTR_ERR(fd.file));
+	error = vfs_getattr(&fd.file->f_path, &sb);
+	fdput(fd);
+	if (error != 0)
+		return cloudabi_convert_errno(error);
+
+	/* Convert results and return them. */
+	convert_stat(&sb, &csb);
+	return copy_to_user(uap->buf, &csb, sizeof(csb)) ? CLOUDABI_EFAULT : 0;
 }
 
 cloudabi_errno_t cloudabi_sys_file_stat_fput(
