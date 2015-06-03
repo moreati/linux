@@ -39,7 +39,20 @@ cloudabi_errno_t cloudabi_sys_fd_close(
 
 cloudabi_errno_t cloudabi_sys_fd_create1(
     const struct cloudabi_sys_fd_create1_args *uap, unsigned long *retval) {
-	return CLOUDABI_ENOSYS;
+	/* TODO(ed): Add support for other file descriptor types. */
+	switch (uap->type) {
+	case CLOUDABI_FILETYPE_POLL: {
+		long fd;
+
+		fd = sys_epoll_create1(O_CLOEXEC);
+		if (fd < 0)
+			return cloudabi_convert_errno(fd);
+		retval[0] = fd;
+		return 0;
+	}
+	default:
+		return CLOUDABI_EINVAL;
+	}
 }
 
 cloudabi_errno_t cloudabi_sys_fd_create2(
