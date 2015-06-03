@@ -86,7 +86,7 @@ cloudabi_errno_t cloudabi_sys_proc_fork(
 	struct task_struct *child;
 	cloudabi_tid_t tid;
 
-	/* Create a new thread. */
+	/* Create a new process. */
 	child = copy_process(CLONE_FD, &clone4_args, NULL, 0, &clonefd_setup);
 	if (IS_ERR(child))
 		return cloudabi_convert_errno(PTR_ERR(child));
@@ -102,7 +102,7 @@ cloudabi_errno_t cloudabi_sys_proc_fork(
 #error "Unknown architecture"
 #endif
 
-	/* Start execution of new thread. */
+	/* Start execution of new process. */
 	clonefd_install_fd(&clone4_args, &clonefd_setup);
 	wake_up_new_task(child);
 
