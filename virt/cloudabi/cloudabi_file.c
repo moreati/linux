@@ -258,6 +258,30 @@ convert_stat(const struct kstat *sb, cloudabi_filestat_t *csb)
 	*csb = res;
 }
 
+static void
+convert_utimens_arguments(const cloudabi_filestat_t *fs,
+    cloudabi_fsflags_t flags, struct timespec *ts)
+{
+
+	if ((flags & CLOUDABI_FILESTAT_ATIM_NOW) != 0) {
+		ts[0].tv_nsec = UTIME_NOW;
+	} else if ((flags & CLOUDABI_FILESTAT_ATIM) != 0) {
+		ts[0].tv_sec = fs->st_atim / NSEC_PER_SEC;
+		ts[0].tv_nsec = fs->st_atim % NSEC_PER_SEC;
+	} else {
+		ts[0].tv_nsec = UTIME_OMIT;
+	}
+
+	if ((flags & CLOUDABI_FILESTAT_MTIM_NOW) != 0) {
+		ts[1].tv_nsec = UTIME_NOW;
+	} else if ((flags & CLOUDABI_FILESTAT_MTIM) != 0) {
+		ts[1].tv_sec = fs->st_mtim / NSEC_PER_SEC;
+		ts[1].tv_nsec = fs->st_mtim % NSEC_PER_SEC;
+	} else {
+		ts[1].tv_nsec = UTIME_OMIT;
+	}
+}
+
 cloudabi_errno_t cloudabi_sys_file_stat_fget(
     const struct cloudabi_sys_file_stat_fget_args *uap, unsigned long *retval)
 {
@@ -293,6 +317,19 @@ cloudabi_errno_t cloudabi_sys_file_stat_fput(
 			return CLOUDABI_EINVAL;
 		return cloudabi_convert_errno(
 		    sys_ftruncate(uap->fd, fs.st_size));
+	} else if ((uap->flags & (CLOUDABI_FILESTAT_ATIM |
+	    CLOUDABI_FILESTAT_ATIM_NOW | CLOUDABI_FILESTAT_MTIM |
+	    CLOUDABI_FILESTAT_MTIM_NOW)) != 0) {
+		struct timespec ts[2];
+
+		/* Call into do_utimes() for timestamp modification. */
+		if ((uap->flags & ~(CLOUDABI_FILESTAT_ATIM |
+		    CLOUDABI_FILESTAT_ATIM_NOW | CLOUDABI_FILESTAT_MTIM |
+		    CLOUDABI_FILESTAT_MTIM_NOW)) != 0)
+			return (EINVAL);
+		convert_utimens_arguments(&fs, uap->flags, ts);
+		return cloudabi_convert_errno(
+		    do_utimes(uap->fd, NULL, ts, 0));
 	}
 	return CLOUDABI_EINVAL;
 }
