@@ -290,7 +290,7 @@ cloudabi_errno_t cloudabi_sys_file_stat_fput(
 	if ((uap->flags & CLOUDABI_FILESTAT_SIZE) != 0) {
 		/* Call into sys_ftruncate() for file truncation. */
 		if ((uap->flags & ~CLOUDABI_FILESTAT_SIZE) != 0)
-			return (EINVAL);
+			return CLOUDABI_EINVAL;
 		return cloudabi_convert_errno(
 		    sys_ftruncate(uap->fd, fs.st_size));
 	}
