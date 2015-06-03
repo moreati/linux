@@ -120,7 +120,25 @@ cloudabi_errno_t cloudabi_sys_mem_protect(
 cloudabi_errno_t cloudabi_sys_mem_sync(
     const struct cloudabi_sys_mem_sync_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	int flags;
+
+	/* Convert flags. */
+	flags = 0;
+	switch (uap->flags & (CLOUDABI_MS_ASYNC | CLOUDABI_MS_SYNC)) {
+	case CLOUDABI_MS_ASYNC:
+		flags |= MS_ASYNC;
+		break;
+	case CLOUDABI_MS_SYNC:
+		flags |= MS_SYNC;
+		break;
+	default:
+		return CLOUDABI_EINVAL;
+	}
+	if ((uap->flags & CLOUDABI_MS_INVALIDATE) != 0)
+		flags |= MS_INVALIDATE;
+
+	return cloudabi_convert_errno(
+	    sys_msync((unsigned long)uap->addr, uap->len, flags));
 }
 
 cloudabi_errno_t cloudabi_sys_mem_unlock(
