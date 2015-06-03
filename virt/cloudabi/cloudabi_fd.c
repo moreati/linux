@@ -25,6 +25,8 @@
 
 #include <linux/file.h>
 #include <linux/fs.h>
+#include <linux/net.h>
+#include <linux/socket.h>
 #include <linux/syscalls.h>
 #include <linux/uio.h>
 
@@ -41,13 +43,23 @@ cloudabi_errno_t cloudabi_sys_fd_create1(
     const struct cloudabi_sys_fd_create1_args *uap, unsigned long *retval) {
 	long fd;
 
-	/* TODO(ed): Add support for other file descriptor types. */
 	switch (uap->type) {
 	case CLOUDABI_FILETYPE_POLL:
 		fd = sys_epoll_create1(O_CLOEXEC);
+		break;
 	case CLOUDABI_FILETYPE_SHARED_MEMORY:
 		/* TODO(ed): Properly pass in a name. */
 		fd = sys_memfd_create(NULL, O_CLOEXEC);
+		break;
+	case CLOUDABI_FILETYPE_SOCKET_DGRAM:
+		fd = sys_socket(AF_UNIX, SOCK_DGRAM, 0);
+		break;
+	case CLOUDABI_FILETYPE_SOCKET_SEQPACKET:
+		fd = sys_socket(AF_UNIX, SOCK_SEQPACKET, 0);
+		break;
+	case CLOUDABI_FILETYPE_SOCKET_STREAM:
+		fd = sys_socket(AF_UNIX, SOCK_STREAM, 0);
+		break;
 	default:
 		return CLOUDABI_EINVAL;
 	}
