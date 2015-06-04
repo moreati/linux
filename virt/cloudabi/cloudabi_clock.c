@@ -115,21 +115,10 @@ cloudabi_errno_t cloudabi_sys_clock_res_get(
 cloudabi_errno_t cloudabi_sys_clock_time_get(
     const struct cloudabi_sys_clock_time_get_args *uap, unsigned long *retval)
 {
-	struct timespec ts;
 	cloudabi_timestamp_t cts;
 	int error;
 
-	switch (uap->clock_id) {
-	case CLOUDABI_CLOCK_MONOTONIC:
-		ktime_get_ts(&ts);
-		break;
-	case CLOUDABI_CLOCK_REALTIME:
-		ktime_get_real_ts(&ts);
-		break;
-	default:
-		return CLOUDABI_EINVAL;
-	}
-	error = convert_timespec_to_timestamp(&ts, &cts);
+	error = cloudabi_clock_time_get(uap->clock_id, &cts);
 	if (error == 0)
 		retval[0] = cts;
 	return cloudabi_convert_errno(error);
