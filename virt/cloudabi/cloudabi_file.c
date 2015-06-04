@@ -337,7 +337,32 @@ cloudabi_errno_t cloudabi_sys_file_stat_fput(
 cloudabi_errno_t cloudabi_sys_file_stat_get(
     const struct cloudabi_sys_file_stat_get_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct kstat sb;
+	struct path path;
+	cloudabi_filestat_t csb;
+	unsigned int lookup_flags;
+	int error;
+
+	lookup_flags = (uap->fd & CLOUDABI_LOOKUP_SYMLINK_FOLLOW) != 0 ?
+	    LOOKUP_FOLLOW : 0;
+retry:
+	error = user_path_at_fixed_length(uap->fd, uap->path, uap->pathlen,
+	    lookup_flags, &path, CAP_FSTAT);
+	if (error != 0)
+		return cloudabi_convert_errno(error);
+
+	error = vfs_getattr(&path, &sb);
+	path_put(&path);
+	if (retry_estale(error, lookup_flags)) {
+		lookup_flags |= LOOKUP_REVAL;
+		goto retry;
+	}
+	if (error != 0)
+		return cloudabi_convert_errno(error);
+
+	/* Convert results and return them. */
+	convert_stat(&sb, &csb);
+	return copy_to_user(uap->buf, &csb, sizeof(csb)) ? CLOUDABI_EFAULT : 0;
 }
 
 cloudabi_errno_t cloudabi_sys_file_stat_put(

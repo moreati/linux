@@ -58,6 +58,9 @@ extern int _user_path_atr(int, const char __user *, unsigned,
 #define user_path_atr(f, n, x, p, ...) \
 	user_path_at((f), (n), (x), (p))
 #endif
+extern int _user_path_at_fixed_length(int, const char __user *, size_t, unsigned, struct path *, ...);
+#define user_path_at_fixed_length(f, n, l, x, p, ...) \
+	_user_path_at_fixed_length(f, n, l, x, p, __VA_ARGS__, 0ULL)
 
 #define user_path(name, path) user_path_at(AT_FDCWD, name, LOOKUP_FOLLOW, path)
 #define user_lpath(name, path) user_path_at(AT_FDCWD, name, 0, path)

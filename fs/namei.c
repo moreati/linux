@@ -2297,6 +2297,21 @@ int _user_path_atr(int dfd,
 }
 #endif
 
+int _user_path_at_fixed_length(int dfd, const char __user *name, size_t len,
+    unsigned flags, struct path *path, ...)
+{
+	struct capsicum_rights rights;
+	int rc;
+	va_list ap;
+
+	/* TODO(ed): Implement. */
+	va_start(ap, path);
+	rc = user_path_at_empty_rights(dfd, name, flags, path, NULL,
+				       cap_rights_vinit(&rights, ap));
+	va_end(ap);
+	return rc;
+}
+
 /*
  * NB: most callers don't do anything directly with the reference to the
  *     to struct filename, but the nd->last pointer points into the name string
