@@ -47,6 +47,20 @@ enum {LAST_NORM, LAST_ROOT, LAST_DOT, LAST_DOTDOT, LAST_BIND};
 #define LOOKUP_ROOT		0x2000
 #define LOOKUP_EMPTY		0x4000
 
+struct nameidata {
+	struct path	path;
+	struct qstr	last;
+	struct path	root;
+	struct inode	*inode; /* path.dentry.d_inode */
+	unsigned int	flags;
+	unsigned	seq, m_seq;
+	int		last_type;
+	unsigned	depth;
+	const struct capsicum_rights *base_rights;
+	struct file	*base;
+	char *saved_names[MAX_NESTED_LINKS + 1];
+};
+
 extern int user_path_at(int, const char __user *, unsigned, struct path *);
 extern int user_path_at_empty(int, const char __user *, unsigned, struct path *, int *empty);
 #ifdef CONFIG_SECURITY_CAPSICUM
@@ -75,6 +89,11 @@ extern struct dentry *user_path_create_fixed_length(int, const char __user *, si
 extern void done_path_create(struct path *, struct dentry *);
 extern struct dentry *kern_path_locked(const char *, struct path *);
 extern int kern_path_mountpoint(int, const char *, struct path *, unsigned int);
+
+extern struct filename *user_path_parent(int, const char __user *, struct nameidata *, unsigned int, const struct capsicum_rights *);
+extern struct filename *user_path_parent_fixed_length(int, const char __user *, size_t, struct nameidata *, unsigned int, const struct capsicum_rights *);
+
+struct dentry *lookup_hash(struct nameidata *);
 
 extern struct dentry *lookup_one_len(const char *, struct dentry *, int);
 

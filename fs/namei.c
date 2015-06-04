@@ -500,20 +500,6 @@ void path_put(const struct path *path)
 }
 EXPORT_SYMBOL(path_put);
 
-struct nameidata {
-	struct path	path;
-	struct qstr	last;
-	struct path	root;
-	struct inode	*inode; /* path.dentry.d_inode */
-	unsigned int	flags;
-	unsigned	seq, m_seq;
-	int		last_type;
-	unsigned	depth;
-	const struct capsicum_rights *base_rights;
-	struct file	*base;
-	char *saved_names[MAX_NESTED_LINKS + 1];
-};
-
 /*
  * Path walking has 2 modes, rcu-walk and ref-walk (see
  * Documentation/filesystems/path-lookup.txt).  In situations when we can't
@@ -2193,7 +2179,7 @@ EXPORT_SYMBOL(vfs_path_lookup);
  * needs parent already locked. Doesn't follow mounts.
  * SMP-safe.
  */
-static struct dentry *lookup_hash(struct nameidata *nd)
+struct dentry *lookup_hash(struct nameidata *nd)
 {
 	return __lookup_hash(&nd->last, nd->path.dentry, nd->flags);
 }
@@ -2325,7 +2311,7 @@ int _user_path_at_fixed_length(int dfd, const char __user *name, size_t len,
  *     allocated by getname. So we must hold the reference to it until all
  *     path-walking is complete.
  */
-static struct filename *
+struct filename *
 user_path_parent(int dfd, const char __user *path, struct nameidata *nd,
 		 unsigned int flags, const struct capsicum_rights *rights)
 {
@@ -2345,6 +2331,15 @@ user_path_parent(int dfd, const char __user *path, struct nameidata *nd,
 	}
 
 	return s;
+}
+
+struct filename *
+user_path_parent_fixed_length(int dfd, const char __user *path, size_t pathlen,
+    struct nameidata *nd, unsigned int flags,
+    const struct capsicum_rights *rights)
+{
+	/* TODO(ed): Implement. */
+	return user_path_parent(dfd, path, nd, flags, rights);
 }
 
 /**

@@ -12,6 +12,7 @@
 #include <linux/fadvise.h>
 #include <linux/file.h>
 #include <linux/fs.h>
+#include <linux/mount.h>
 #include <linux/namei.h>
 #include <linux/path.h>
 #include <linux/security.h>
@@ -277,7 +278,131 @@ retry:
 cloudabi_errno_t cloudabi_sys_file_rename(
     const struct cloudabi_sys_file_rename_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct dentry *old_dir, *new_dir;
+	struct dentry *old_dentry, *new_dentry;
+	struct dentry *trap;
+	struct nameidata oldnd, newnd;
+	struct inode *delegated_inode = NULL;
+	struct filename *from;
+	struct filename *to;
+	struct capsicum_rights old_rights;
+	struct capsicum_rights new_rights;
+	unsigned int lookup_flags = 0;
+	bool should_retry = false;
+	int error;
+
+	cap_rights_init(&old_rights, CAP_RENAMEAT);
+	cap_rights_init(&new_rights, CAP_LINKAT);
+
+retry:
+	from = user_path_parent_fixed_length(uap->oldfd, uap->old, uap->oldlen,
+	    &oldnd, lookup_flags, &old_rights);
+	if (IS_ERR(from)) {
+		error = PTR_ERR(from);
+		goto exit;
+	}
+
+	to = user_path_parent_fixed_length(uap->newfd, uap->new, uap->newlen,
+	    &newnd, lookup_flags, &new_rights);
+	if (IS_ERR(to)) {
+		error = PTR_ERR(to);
+		goto exit1;
+	}
+
+	if (oldnd.path.mnt != newnd.path.mnt) {
+		error = -EXDEV;
+		goto exit2;
+	}
+
+	old_dir = oldnd.path.dentry;
+	new_dir = newnd.path.dentry;
+	if (oldnd.last_type != LAST_NORM || newnd.last_type != LAST_NORM) {
+		error = -EINVAL;
+		goto exit2;
+	}
+
+	error = mnt_want_write(oldnd.path.mnt);
+	if (error != 0)
+		goto exit2;
+
+	oldnd.flags &= ~LOOKUP_PARENT;
+	newnd.flags &= ~LOOKUP_PARENT;
+	newnd.flags |= LOOKUP_RENAME_TARGET;
+
+retry_deleg:
+	trap = lock_rename(new_dir, old_dir);
+
+	old_dentry = lookup_hash(&oldnd);
+	if (IS_ERR(old_dentry)) {
+		error = PTR_ERR(old_dentry);
+		goto exit3;
+	}
+	/* source must exist */
+	if (d_is_negative(old_dentry)) {
+		error = -ENOENT;
+		goto exit4;
+	}
+	new_dentry = lookup_hash(&newnd);
+	if (IS_ERR(new_dentry)) {
+		error = PTR_ERR(new_dentry);
+		goto exit4;
+	}
+	/* unless the source is a directory trailing slashes give -ENOTDIR */
+	if (!d_is_dir(old_dentry)) {
+		if (oldnd.last.name[oldnd.last.len]) {
+			error = -ENOTDIR;
+			goto exit5;
+		}
+		if (newnd.last.name[newnd.last.len]) {
+			error = -ENOTDIR;
+			goto exit5;
+		}
+	}
+	/* source should not be ancestor of target */
+	if (old_dentry == trap) {
+		error = -EINVAL;
+		goto exit5;
+	}
+	/* target should not be an ancestor of source */
+	if (new_dentry == trap) {
+		error = -ENOTEMPTY;
+		goto exit5;
+	}
+
+	error = security_path_rename(&oldnd.path, old_dentry,
+				     &newnd.path, new_dentry, 0);
+	if (error != 0)
+		goto exit5;
+	error = vfs_rename(old_dir->d_inode, old_dentry,
+			   new_dir->d_inode, new_dentry,
+			   &delegated_inode, 0);
+exit5:
+	dput(new_dentry);
+exit4:
+	dput(old_dentry);
+exit3:
+	unlock_rename(new_dir, old_dir);
+	if (delegated_inode) {
+		error = break_deleg_wait(&delegated_inode);
+		if (error == 0)
+			goto retry_deleg;
+	}
+	mnt_drop_write(oldnd.path.mnt);
+exit2:
+	if (retry_estale(error, lookup_flags))
+		should_retry = true;
+	path_put(&newnd.path);
+	putname(to);
+exit1:
+	path_put(&oldnd.path);
+	putname(from);
+	if (should_retry) {
+		should_retry = false;
+		lookup_flags |= LOOKUP_REVAL;
+		goto retry;
+	}
+exit:
+	return cloudabi_convert_errno(error);
 }
 
 /* Converts a struct timespec to a timestamp in nanoseconds since the Epoch. */
