@@ -34,18 +34,13 @@
 /* Converts a CloudABI clock ID to a Linux clock ID. */
 int cloudabi_convert_clockid(cloudabi_clockid_t in, clockid_t *out)
 {
+	/* TODO(ed): Add support for CLOCK_*_CPUTIME_ID. */
 	switch (in) {
 	case CLOUDABI_CLOCK_MONOTONIC:
 		*out = CLOCK_MONOTONIC;
 		return 0;
-	case CLOUDABI_CLOCK_PROCESS_CPUTIME_ID:
-		*out = CLOCK_PROCESS_CPUTIME_ID;
-		return 0;
 	case CLOUDABI_CLOCK_REALTIME:
 		*out = CLOCK_REALTIME;
-		return 0;
-	case CLOUDABI_CLOCK_THREAD_CPUTIME_ID:
-		*out = CLOCK_THREAD_CPUTIME_ID;
 		return 0;
 	default:
 		return -EINVAL;
@@ -80,7 +75,7 @@ int cloudabi_clock_time_get(cloudabi_clockid_t clock_id,
 {
 	struct timespec ts;
 
-	/* TODO(ed): Add support for the other clocks. */
+	/* TODO(ed): Add support for CLOCK_*_CPUTIME_ID. */
 	switch (clock_id) {
 	case CLOUDABI_CLOCK_MONOTONIC:
 		ktime_get_ts(&ts);
