@@ -80,6 +80,7 @@ cloudabi_errno_t cloudabi_sys_proc_exit(
 
 cloudabi_errno_t cloudabi_sys_proc_fork(
     const void *uap, unsigned long *retval) {
+#if 0
 	struct clone4_args clone4_args = {};
 	struct clonefd_setup clonefd_setup;
 	struct pt_regs *regs;
@@ -109,6 +110,8 @@ cloudabi_errno_t cloudabi_sys_proc_fork(
 	/* Return the new file descriptor to the parent process. */
 	retval[0] = clonefd_setup.fd;
 	return 0;
+#endif
+	return CLOUDABI_ENOSYS;
 }
 
 cloudabi_errno_t cloudabi_sys_proc_raise(
