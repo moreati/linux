@@ -208,6 +208,13 @@ getname(const char __user * filename)
 }
 
 struct filename *
+getname_fixed_length(const char __user *filename, size_t length)
+{
+	/* TODO(ed): Implement. */
+	return getname(filename);
+}
+
+struct filename *
 getname_kernel(const char * filename)
 {
 	struct filename *result;

@@ -121,7 +121,55 @@ out:
 cloudabi_errno_t cloudabi_sys_file_link(
     const struct cloudabi_sys_file_link_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct dentry *new_dentry;
+	struct path old_path, new_path;
+	struct inode *delegated_inode = NULL;
+	struct capsicum_rights rights;
+	int how = 0;
+	int error;
+
+	if (uap->fd1 & AT_SYMLINK_FOLLOW)
+		how |= LOOKUP_FOLLOW;
+	cap_rights_init(&rights, CAP_LINKAT);
+retry:
+	error = user_path_at_fixed_length(uap->fd1, uap->path1, uap->path1len,
+	    how, &old_path);
+	if (error != 0)
+		return cloudabi_convert_errno(error);
+
+	new_dentry = user_path_create_fixed_length(uap->fd2, uap->path2,
+	    uap->path2len, &new_path, how & LOOKUP_REVAL, &rights);
+	error = PTR_ERR(new_dentry);
+	if (IS_ERR(new_dentry))
+		goto out;
+
+	if (old_path.mnt != new_path.mnt) {
+		error = -EXDEV;
+		goto out_dput;
+	}
+	/* TODO(ed): Properly call may_linkat(). */
+	error = security_path_link(old_path.dentry, &new_path, new_dentry);
+	if (error != 0)
+		goto out_dput;
+	error = vfs_link(old_path.dentry, new_path.dentry->d_inode, new_dentry,
+	    &delegated_inode);
+out_dput:
+	done_path_create(&new_path, new_dentry);
+	if (delegated_inode != NULL) {
+		error = break_deleg_wait(&delegated_inode);
+		if (error == 0) {
+			path_put(&old_path);
+			goto retry;
+		}
+	}
+	if (retry_estale(error, how)) {
+		path_put(&old_path);
+		how |= LOOKUP_REVAL;
+		goto retry;
+	}
+out:
+	path_put(&old_path);
+	return cloudabi_convert_errno(error);
 }
 
 cloudabi_errno_t cloudabi_sys_file_open(
@@ -192,7 +240,38 @@ cloudabi_errno_t cloudabi_sys_file_readdir(
 cloudabi_errno_t cloudabi_sys_file_readlink(
     const struct cloudabi_sys_file_readlink_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct path path;
+	struct inode *inode;
+	unsigned int lookup_flags = 0;
+	int error;
+
+retry:
+	error = user_path_at_fixed_length(uap->fd, uap->path, uap->pathlen,
+	    lookup_flags, &path);
+	if (error != 0)
+		return cloudabi_convert_errno(error);
+
+	inode = d_backing_inode(path.dentry);
+	if (inode->i_op->readlink == NULL) {
+		path_put(&path);
+		return CLOUDABI_EINVAL;
+	}
+
+	error = security_inode_readlink(path.dentry);
+	if (error == 0) {
+		touch_atime(&path);
+		error = inode->i_op->readlink(path.dentry, uap->buf,
+		    uap->bufsize);
+	}
+	path_put(&path);
+	if (retry_estale(error, lookup_flags)) {
+		lookup_flags |= LOOKUP_REVAL;
+		goto retry;
+	}
+	if (error < 0)
+		return cloudabi_convert_errno(error);
+	retval[0] = error;
+	return 0;
 }
 
 cloudabi_errno_t cloudabi_sys_file_rename(
@@ -374,7 +453,35 @@ cloudabi_errno_t cloudabi_sys_file_stat_put(
 cloudabi_errno_t cloudabi_sys_file_symlink(
     const struct cloudabi_sys_file_symlink_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	int error;
+	struct filename *from;
+	struct dentry *dentry;
+	struct path path;
+	unsigned int lookup_flags = 0;
+	struct capsicum_rights rights;
+
+	from = getname_fixed_length(uap->path1, uap->path1len);
+	if (IS_ERR(from))
+		return cloudabi_convert_errno(PTR_ERR(from));
+	cap_rights_init(&rights, CAP_SYMLINKAT);
+retry:
+	dentry = user_path_create_fixed_length(uap->fd2, uap->path2,
+	    uap->path2len, &path, lookup_flags, &rights);
+	error = PTR_ERR(dentry);
+	if (IS_ERR(dentry))
+		goto out_putname;
+
+	error = security_path_symlink(&path, dentry, from->name);
+	if (error == 0)
+		error = vfs_symlink(path.dentry->d_inode, dentry, from->name);
+	done_path_create(&path, dentry);
+	if (retry_estale(error, lookup_flags)) {
+		lookup_flags |= LOOKUP_REVAL;
+		goto retry;
+	}
+out_putname:
+	putname(from);
+	return cloudabi_convert_errno(error);
 }
 
 cloudabi_errno_t cloudabi_sys_file_unlink(
