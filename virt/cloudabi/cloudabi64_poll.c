@@ -23,6 +23,7 @@
  * SUCH DAMAGE.
  */
 
+#include <linux/hrtimer.h>
 #include <linux/uaccess.h>
 
 #include "cloudabi_syscalldefs.h"
@@ -32,8 +33,10 @@
 cloudabi_errno_t cloudabi64_sys_poll(
     const struct cloudabi64_sys_poll_args *uap, unsigned long *retval)
 {
+	struct timespec ts;
 	struct task_struct *task;
 	int error;
+	clockid_t clockid;
 
 	/*
 	 * Bandaid to support CloudABI futex constructs.
@@ -43,7 +46,22 @@ cloudabi_errno_t cloudabi64_sys_poll(
 		cloudabi64_event_t ev;
 		if (copy_from_user(&ev, uap->in, sizeof(ev)) != 0)
 			return CLOUDABI_EFAULT;
-		if (ev.type == CLOUDABI_EVENT_TYPE_CONDVAR) {
+		if (ev.type == CLOUDABI_EVENT_TYPE_CLOCK) {
+			/* Sleep. */
+			/* TODO(ed): This should not be here. */
+			error = cloudabi_convert_clockid(ev.clock.clock_id,
+			    &clockid);
+			if (error == 0) {
+				ts.tv_sec = ev.clock.timeout / NSEC_PER_SEC;
+				ts.tv_nsec = ev.clock.timeout % NSEC_PER_SEC;
+				error = hrtimer_nanosleep(&ts, NULL,
+				    HRTIMER_MODE_ABS, clockid);
+			}
+			ev.error = cloudabi_convert_errno(error);
+			retval[0] = 1;
+			return copy_to_user(uap->out, &ev, sizeof(ev)) != 0 ?
+			    CLOUDABI_EFAULT : 0;
+		} else if (ev.type == CLOUDABI_EVENT_TYPE_CONDVAR) {
 			/* Wait on a condition variable. */
 			ev.error = cloudabi_convert_errno(
 			    cloudabi_futex_condvar_wait(

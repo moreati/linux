@@ -31,6 +31,27 @@
 #include "cloudabi_syscalls.h"
 #include "cloudabi_util.h"
 
+/* Converts a CloudABI clock ID to a Linux clock ID. */
+int cloudabi_convert_clockid(cloudabi_clockid_t in, clockid_t *out)
+{
+	switch (in) {
+	case CLOUDABI_CLOCK_MONOTONIC:
+		*out = CLOCK_MONOTONIC;
+		return 0;
+	case CLOUDABI_CLOCK_PROCESS_CPUTIME_ID:
+		*out = CLOCK_PROCESS_CPUTIME_ID;
+		return 0;
+	case CLOUDABI_CLOCK_REALTIME:
+		*out = CLOCK_REALTIME;
+		return 0;
+	case CLOUDABI_CLOCK_THREAD_CPUTIME_ID:
+		*out = CLOCK_THREAD_CPUTIME_ID;
+		return 0;
+	default:
+		return -EINVAL;
+	}
+}
+
 /* Converts a struct timespec to a CloudABI timestamp. */
 static int convert_timespec_to_timestamp(const struct timespec *in,
     cloudabi_timestamp_t *out)
@@ -59,6 +80,7 @@ int cloudabi_clock_time_get(cloudabi_clockid_t clock_id,
 {
 	struct timespec ts;
 
+	/* TODO(ed): Add support for the other clocks. */
 	switch (clock_id) {
 	case CLOUDABI_CLOCK_MONOTONIC:
 		ktime_get_ts(&ts);
@@ -78,17 +100,12 @@ cloudabi_errno_t cloudabi_sys_clock_res_get(
 	struct timespec ts;
 	cloudabi_timestamp_t cts;
 	int error;
+	clockid_t clockid;
 
-	switch (uap->clock_id) {
-	case CLOUDABI_CLOCK_MONOTONIC:
-		hrtimer_get_res(CLOCK_MONOTONIC, &ts);
-		break;
-	case CLOUDABI_CLOCK_REALTIME:
-		hrtimer_get_res(CLOCK_REALTIME, &ts);
-		break;
-	default:
-		return CLOUDABI_EINVAL;
-	}
+	error = cloudabi_convert_clockid(uap->clock_id, &clockid);
+	if (error != 0)
+		return cloudabi_convert_errno(error);
+	hrtimer_get_res(clockid, &ts);
 	error = convert_timespec_to_timestamp(&ts, &cts);
 	if (error == 0)
 		retval[0] = cts;

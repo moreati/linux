@@ -43,6 +43,9 @@ cloudabi_errno_t cloudabi_convert_errno(int);
 /* Fetches the time value of a clock. */
 int cloudabi_clock_time_get(cloudabi_clockid_t, cloudabi_timestamp_t *);
 
+/* Converts a CloudABI clock ID to a Linux clock ID. */
+int cloudabi_convert_clockid(cloudabi_clockid_t, clockid_t *);
+
 /*
  * Blocking futex functions.
  *
