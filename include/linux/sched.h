@@ -2638,20 +2638,7 @@ extern int do_execveat(int, struct filename *,
 		       const char __user * const __user *,
 		       const char __user * const __user *,
 		       int);
-<<<<<<< HEAD
-struct clonefd_setup {
-	int fd;
-	struct file *file;
-};
-#ifdef CONFIG_CLONEFD
-void clonefd_install_fd(struct clone4_args *, struct clonefd_setup *);
-#else
-static inline void clonefd_install_fd(struct clone4_args *args, struct clonefd_setup *setup) {}
-#endif
-extern struct task_struct *copy_process(u64, struct clone4_args *, struct pid *, int, struct clonefd_setup *);
-=======
 extern long _do_fork(u64 clone_flags, struct clone4_args *args);
->>>>>>> capsicum
 extern long do_fork(unsigned long, unsigned long, unsigned long, int __user *, int __user *);
 struct task_struct *fork_idle(int);
 extern pid_t kernel_thread(int (*fn)(void *), void *arg, unsigned long flags);
