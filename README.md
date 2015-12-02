@@ -1,43 +1,80 @@
 Capsicum Object-Capabilities on Linux
 =====================================
 
-This repository is used for the development of
-[Capsicum](http://www.cl.cam.ac.uk/research/security/capsicum/) object
-capabilities in the Linux kernel.  Overall status of the
-Capsicum for Linux project is described at
+This repository holds the kernel code for the Linux version of the
+[Capsicum](http://www.cl.cam.ac.uk/research/security/capsicum/)
+security framework. Overall status of the Capsicum for Linux project is described at
 [capsicum-linux.org](http://capsicum-linux.org/index.html).
 
-This functionality is based on:
+Topic Branches
+--------------
+
+This repository includes four (per-version) topic branches, which hold
+patchsets that apply cleanly on top of an upstream kernel version.  These
+branches are **frequently rebased**, either because a new upstream release
+candidate has become available, or because a fix to Capsicum code has been
+folded into the patchset.
+
+The `capsicum-hooks-<ver>` branch holds a patch set that can be applied on top
+of the specified upstream kernel version, in order to provide the core Capsicum
+object capability functionality.  This patch set breaks the functionality down
+into individual chunks for ease of review and application; there are also
+several commits that include independent pieces of function that are
+potentially of interest on their own:
+
+ - The first commits in the series add the `O_BENEATH` flag to `openat(2)`; this
+   prevents the opening of paths with a leading '/' or that contain '..'.
+ - A later commit in the series adds a `prctl(2)` operation to implicitly force
+   the use of the `O_BENEATH` flag for all `openat(2)` operations for a task.
+ - The penultimate commits in the series extend the `seccomp_data` structure to
+   include the tid/tgid of the running process in the input data for any
+   seccomp BPF programs; this allows the filter to police operations so that
+   only the current thread or process can be targetted.
+ - The final commit in the series exports additional headers and constants for
+   system call numbers so that userspace tools can simultaneously access the
+   different values for all x86 architectures.
+
+The `procdesc-<ver>` branch holds a separate patch set that provides an
+implementation of Capsicum's process descriptors, building on draft patches
+from Josh Triplett in an incremental manner.  Note that this patchset is
+completely independent from the `capsicum-hooks-<ver>` patchset.
+
+The `misc-<ver>` branch holds a few independent fixes that are not required
+for Capsicum functionality, but which should ideally be upstreamed at some point.
+
+The `no-upstream-<ver>` branch holds local changes that should never be upstreamed;
+they are held locally purely for the convenience of the Capsicum developers.
+
+
+Development Branch
+------------------
+
+The `capsicum` branch is the main Capsicum development branch (and so may
+contain in-progress code); the
+[capsicum-test](https://github.com/google/capsicum-test) repository is normally
+kept in sync with this branch.  This branch is never rebased; new upstream
+kernel releases are merged into it as they become available.
+
+Fixes to the Capsicum functionality on this branch will also be merged into the
+appropriate topic branch.  As a result, a merge of the latest versions of the
+four topic branches should normally be equivalent to the current status of the
+`capsicum` branch.
+
+![Capsicum branch structure](capsicum-branches.png)
+
+
+Provenance
+----------
+
+This Capsicum implementation is based on:
 
  - the original Capsicum implementation in FreeBSD 9.x and 10.x,
-   written by Robert Watson and Jonathan Anderson.
- - the
+   written by Robert Watson, Jonathan Anderson and Pawel Dawidek
+ - an earlier
    [Linux kernel implementation](http://git.chromium.org/gitweb/?p=chromiumos/third_party/kernel-capsicum.git;a=shortlog;h=refs/heads/capsicum)
    written by Meredydd Luff in 2012.
 
-The current functionality is based on the 4.0 upstream kernel.
-
-Branch Status
--------------
-
-The `capsicum` branch is the main Capsicum development branch, which is under active
-development and so may contain in-progress, untested code.  This branch is generally
-kept synchronized with the [capsicum-test](https://github.com/google/capsicum-test)
-repository.
-
-Other branches **should be avoided** as they are frequently rebased.  In particular,
-any branches named with the following prefixes are used to divide the Capsicum code into
-distinct per-topic patchsets, and so are rebased to synchronize with the tip of
-the `capsicum` branch.
-
- - `capsicum-hooks-<ver>`: Capability file descriptors via LSM hooks.
- - `procdesc-<ver>`: Process descriptors.
- - `misc-<ver>`: Other kernel changes not specifically needed for Capsicum.
- - `no-upstream-<ver>`: Local changes for development convenience.
-
-A merge of the latest versions of these topic branches should yield a codebase
-that is the same as the current `capsicum` branch (although this sometimes lags
-behind as this requires manual merging).
+The current functionality is based on the 4.2 upstream kernel.
 
 
 Functionality Overview
@@ -50,7 +87,8 @@ on a capability FD that are not allowed by the associated rights are rejected
 be narrowed, not widened.
 
 Capsicum also introduces *capability mode*, which disables (with `ECAPMODE`)
-all syscalls that access any kind of global namespace.
+all syscalls that access any kind of global namespace; this is mostly (but not
+completely) implemented in userspace as a seccomp-bpf filter.
 
 See [Documentation/security/capsicum.txt](Documentation/security/capsicum.txt)
 for more details
@@ -58,53 +96,60 @@ for more details
 As process management normally involves a global namespace (that of `pid_t`
 values), Capsicum also introduces a *process descriptor* and related syscalls,
 which allows processes to be manipulated as another kind of file descriptor.
-See [Documentation/procdesc.txt](Documentation/procdesc.txt) for more details.
+This functionality is based on Josh Triplett's proposed clonefd patches.
 
 
 Building
 --------
 
-Capsicum support is currently included for x86 variants and user-mode Linux.  The
-configuration parameters that need to be enabled are:
+Capsicum support is currently included for x86 variants and user-mode Linux; the
+following config settings need to be enabled:
 
- - `CONFIG_SECURITY_CAPSICUM`: enable Capsicum.
- - `CONFIG_PROCDESC`: enable Capsicum process-descriptor functionality.
+ - `CONFIG_SECURITY_CAPSICUM` enables Capsicum capabilities
+ - `CONFIG_CLONE4` enables the clone4(2) system call, which is needed for...
+ - `CONFIG_CLONEFD` enables the clonefd functionality that process descriptors
+   are built on.
 
-User-mode Linux is used for Capsicum testing, and requires the following
-additional configuration parameters:
-
- - `CONFIG_DEBUG_FS`: enable debug filesystem.
-
-The following configuration options are also useful for development:
+The following configuration options are useful for development:
 
  - `CONFIG_DEBUG_KMEMLEAK`: enable kernel memory leak detection.
  - `CONFIG_DEBUG_BUGVERBOSE`: verbose bug reporting.
 
+User-mode Linux can be used for Capsicum testing, and requires the following
+additional configuration parameters:
+
+ - `CONFIG_DEBUG_FS`: enable debug filesystem.
+
+
 Testing
 -------
 
-The capsicum-linux currently includes test scripts in the
-`tools/testing/capsicum/` directory, although the (user-space) tests themselves are
-in the separate [capsicum-test](https://github.com/google/capsicum-test) repository.
+The test suite for Capsicum is held in a separate
+[capsicum-test](https://github.com/google/capsicum-test) repository, to allow
+the tests to be easily shared between Linux and FreeBSD.
 
-These test scripts currently expect specific build configurations (replacing the
-`-j 5` flag with an appropriate parallelization factor for the local machine):
+This repository also includes kernel self-tests for some aspects of Capsicum
+functionality, specifically:
 
- - For user-mode Linux, the kernel should be built with ``make -j 5 ARCH=um
-   O=`pwd`/build/ linux`` (i.e. the old-style `linux` target is required, and the
-   output tree is expect to be under the `build/` subdirectory).
+ - `selftests/openat`: tests of openat(2) and the new `O_BENEATH` flag for it.
+ - `selftests/clone`: tests of the clonefd functionality used for process
+   descriptors.
 
- - For native Linux (including VMs), the kernel should be built with
-   ``make -j 5 O=`pwd`/build-native``
+There are also some test scripts in the `tools/testing/capsicum/` directory,
+purely for local convenience when testing under user-mode Linux (`ARCH=um`).
 
 
 UML Testing Setup
 -----------------
 
+Capsicum can be run and tested in a user-mode Linux build, for convenience and
+speed of development iterations.  This section describes the setup procedure
+for this method of testing.
+
 Create a file to use as the disk for user-mode Linux (UML):
 
     # Create (sparse) empty file
-    dd if=/dev/zero of=tools/testing/capsicum/test.img bs=1 count=0 seek=500GB
+    dd if=/dev/zero of=tools/testing/capsicum/test.img bs=1 count=0 seek=500MB
     # Make an ext3 filesystem in it
     mke2fs -t ext3 -F tools/testing/capsicum/test.img
 
@@ -114,7 +159,7 @@ Mount the new file system somewhere:
 
 Put an Ubuntu base system onto it:
 
-    sudo debootstrap --arch=amd64 precise /mnt http://archive.ubuntu.com/ubuntu
+    sudo debootstrap --arch=amd64 --include libsctp1 trusty /mnt http://archive.ubuntu.com/ubuntu
 
 Replace some key files:
 
