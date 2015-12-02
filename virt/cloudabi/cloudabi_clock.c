@@ -92,18 +92,12 @@ int cloudabi_clock_time_get(cloudabi_clockid_t clock_id,
 cloudabi_errno_t cloudabi_sys_clock_res_get(
     const struct cloudabi_sys_clock_res_get_args *uap, unsigned long *retval)
 {
-	struct timespec ts;
-	cloudabi_timestamp_t cts;
 	int error;
 	clockid_t clockid;
 
 	error = cloudabi_convert_clockid(uap->clock_id, &clockid);
-	if (error != 0)
-		return cloudabi_convert_errno(error);
-	hrtimer_get_res(clockid, &ts);
-	error = convert_timespec_to_timestamp(&ts, &cts);
 	if (error == 0)
-		retval[0] = cts;
+		retval[0] = hrtimer_resolution;
 	return cloudabi_convert_errno(error);
 }
 
