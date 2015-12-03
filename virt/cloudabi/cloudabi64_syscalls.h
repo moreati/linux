@@ -68,11 +68,9 @@ struct cloudabi64_sys_fd_write_args {
 	ARG(cloudabi64_size_t, iovlen);
 };
 struct cloudabi64_sys_poll_args {
-	ARG(cloudabi_fd_t, fd);
-	ARG(const cloudabi64_event_t __user *, in);
-	ARG(cloudabi64_size_t, nin);
+	ARG(const cloudabi64_subscription_t __user *, in);
 	ARG(cloudabi64_event_t __user *, out);
-	ARG(cloudabi64_size_t, nout);
+	ARG(cloudabi64_size_t, nevents);
 };
 struct cloudabi64_sys_proc_exec_args {
 	ARG(cloudabi_fd_t, fd);
