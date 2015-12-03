@@ -117,35 +117,37 @@ static unsigned long cloudabi_binfmt_phdr_map(struct file *file,
 
 static int cloudabi_binfmt_init_stack(struct linux_binprm *bprm,
     struct elfhdr *hdr, unsigned long load_addr) {
-	cloudabi64_startup_data_t sd;
 	unsigned long p;
 
-	/* Prepare the startup data that gets passed to the new process. */
-	/* TODO(ed): Add support for command line arguments. */
-	memset(&sd, '\0', sizeof(sd));
-	sd.sd_elf_phdr = load_addr + hdr->e_phoff;
-	sd.sd_elf_phdrlen = hdr->e_phnum;
-	sd.sd_thread_id = cloudabi_gettid(current),
-	get_random_bytes(&sd.sd_random_seed, sizeof(sd.sd_random_seed));
-	/* TODO(ed): Fill in the right number of CPUs. */
-	sd.sd_ncpus = 4;
-	sd.sd_pagesize = PAGE_SIZE;
+	/* Create an auxiliary vector. */
+	/* TODO(ed): Add random stack smashing and other fields. */
+	cloudabi64_auxv_t auxv[] = {
+#define	VAL(type, val)	{ .a_type = (type), .a_val = (val) }
+#define	PTR(type, ptr)	{ .a_type = (type), .a_ptr = (uintptr_t)(ptr) }
+		VAL(CLOUDABI_AT_PAGESZ, PAGE_SIZE),
+		PTR(CLOUDABI_AT_PHDR, load_addr + hdr->e_phoff),
+		VAL(CLOUDABI_AT_PHNUM, hdr->e_phnum),
+		VAL(CLOUDABI_AT_TID, cloudabi_gettid(current)),
+#undef VAL
+#undef PTR
+		{ .a_type = CLOUDABI_AT_NULL },
+	};
 
 	/*
-	 * Determine where the startup data structure needs to go on the
-	 * stack and adjust the stack address accordingly.
+	 * Determine where the auxiliary vector needs to go on the stack
+	 * and adjust the stack address accordingly.
 	 */
 	p = arch_align_stack(bprm->p);
 #ifdef CONFIG_STACK_GROWSUP
 	p = roundup(p, STACK_ALIGN);
-	bprm->p = p + roundup(sizeof(sd), STACK_ALIGN);
+	bprm->p = p + roundup(sizeof(auxv), STACK_ALIGN);
 #else
 	bprm->p = p = rounddown(p, STACK_ALIGN) -
-	    roundup(sizeof(sd), STACK_ALIGN);
+	    roundup(sizeof(auxv), STACK_ALIGN);
 #endif
 
-	if (copy_to_user((cloudabi64_startup_data_t __user *)p, &sd,
-	    sizeof(sd)) != 0)
+	if (copy_to_user((cloudabi64_auxv_t __user *)p, auxv,
+	    sizeof(auxv)) != 0)
 		return -EFAULT;
 	return 0;
 }
@@ -325,7 +327,6 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 #ifdef __x86_64__
 	/* TODO(ed): This should be solved more elegantly. */
 	regs->di = bprm->p;
-	regs->si = sizeof(cloudabi64_startup_data_t);
 	bprm->p = rounddown(bprm->p, 16) - 8;
 #else
 #error "Unknown architecture"
