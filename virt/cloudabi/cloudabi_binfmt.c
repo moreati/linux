@@ -120,10 +120,13 @@ static int cloudabi_binfmt_init_stack(struct linux_binprm *bprm,
 	unsigned long p;
 
 	/* Create an auxiliary vector. */
-	/* TODO(ed): Add random stack smashing and other fields. */
 	cloudabi64_auxv_t auxv[] = {
 #define	VAL(type, val)	{ .a_type = (type), .a_val = (val) }
 #define	PTR(type, ptr)	{ .a_type = (type), .a_ptr = (uintptr_t)(ptr) }
+		VAL(CLOUDABI_AT_ARGDATA, current->mm->arg_start),
+		VAL(CLOUDABI_AT_ARGDATALEN,
+		    current->mm->arg_end - current->mm->arg_start - 1),
+		/* TODO(ed): CLOUDABI_AT_CANARY{,LEN}. */
 		VAL(CLOUDABI_AT_PAGESZ, PAGE_SIZE),
 		PTR(CLOUDABI_AT_PHDR, load_addr + hdr->e_phoff),
 		VAL(CLOUDABI_AT_PHNUM, hdr->e_phnum),
