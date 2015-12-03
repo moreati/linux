@@ -61,6 +61,7 @@ struct cloudabi_sys_clock_time_get_args {
 };
 struct cloudabi_sys_condvar_signal_args {
 	ARG(cloudabi_condvar_t __user *, condvar);
+	ARG(cloudabi_mflags_t, scope);
 	ARG(cloudabi_nthreads_t, nwaiters);
 };
 struct cloudabi_sys_fd_close_args {
@@ -189,6 +190,7 @@ struct cloudabi_sys_file_unlink_args {
 };
 struct cloudabi_sys_lock_unlock_args {
 	ARG(cloudabi_lock_t __user *, lock);
+	ARG(cloudabi_mflags_t, scope);
 };
 struct cloudabi_sys_mem_advise_args {
 	ARG(void __user *, addr);
