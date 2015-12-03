@@ -278,6 +278,8 @@ retry:
 cloudabi_errno_t cloudabi_sys_file_rename(
     const struct cloudabi_sys_file_rename_args *uap, unsigned long *retval)
 {
+	/* TODO(ed): Reenable this system call. */
+#if 0
 	struct dentry *old_dir, *new_dir;
 	struct dentry *old_dentry, *new_dentry;
 	struct dentry *trap;
@@ -403,6 +405,8 @@ exit1:
 	}
 exit:
 	return cloudabi_convert_errno(error);
+#endif
+	return CLOUDABI_ENOSYS;
 }
 
 /* Converts a struct timespec to a timestamp in nanoseconds since the Epoch. */
