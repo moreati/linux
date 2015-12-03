@@ -1,10 +1,14 @@
 #ifndef _LINUX_NAMEI_H
 #define _LINUX_NAMEI_H
 
+#include <linux/dcache.h>
+#include <linux/file.h>
 #include <linux/kernel.h>
 #include <linux/path.h>
 #include <linux/fcntl.h>
 #include <linux/errno.h>
+
+struct capsicum_rights;
 
 enum { MAX_NESTED_LINKS = 8 };
 
@@ -45,6 +49,32 @@ enum {LAST_NORM, LAST_ROOT, LAST_DOT, LAST_DOTDOT, LAST_BIND};
 #define LOOKUP_ROOT		0x2000
 #define LOOKUP_EMPTY		0x4000
 
+#define EMBEDDED_LEVELS 2
+struct nameidata {
+	struct path	path;
+	struct qstr	last;
+	struct path	root;
+	struct inode	*inode; /* path.dentry.d_inode */
+	unsigned int	flags;
+	unsigned	seq, m_seq;
+	int		last_type;
+	unsigned	depth;
+	int		total_link_count;
+	struct saved {
+		struct path link;
+		void *cookie;
+		const char *name;
+		struct inode *inode;
+		unsigned seq;
+	} *stack, internal[EMBEDDED_LEVELS];
+	struct filename	*name;
+	struct nameidata *saved;
+	unsigned	root_seq;
+	int		dfd;
+	const struct capsicum_rights *rights;
+	struct fd	dfd_cap;
+};
+
 extern int user_path_at_empty(int, const char __user *, unsigned, struct path *, int *empty);
 
 static inline int user_path_at(int dfd, const char __user *name, unsigned flags,
@@ -78,14 +108,23 @@ extern int _user_path_atr(int, const char __user *, unsigned,
 #define user_path_atr(f, n, x, p, ...) \
 	user_path_at((f), (n), (x), (p))
 #endif
+extern int _user_path_at_fixed_length(int, const char __user *, size_t, unsigned, struct path *, ...);
+#define user_path_at_fixed_length(f, n, l, x, p, ...) \
+	_user_path_at_fixed_length(f, n, l, x, p, ##__VA_ARGS__, 0ULL)
 
 extern int kern_path(const char *, unsigned, struct path *);
 
 extern struct dentry *kern_path_create(int, const char *, struct path *, unsigned int);
 extern struct dentry *user_path_create(int, const char __user *, struct path *, unsigned int);
+extern struct dentry *user_path_create_fixed_length(int, const char __user *, size_t, struct path *, unsigned int, const struct capsicum_rights *);
 extern void done_path_create(struct path *, struct dentry *);
 extern struct dentry *kern_path_locked(const char *, struct path *);
 extern int kern_path_mountpoint(int, const char *, struct path *, unsigned int);
+
+extern struct filename *user_path_parent(int, const char __user *, struct path *, struct qstr *, int *, unsigned int, const struct capsicum_rights *);
+extern struct filename *user_path_parent_fixed_length(int, const char __user *, size_t, struct path *, struct qstr *, int *, unsigned int, const struct capsicum_rights *);
+
+struct dentry *__lookup_hash(struct qstr *name, struct dentry *base, unsigned int flags);
 
 extern struct dentry *lookup_one_len(const char *, struct dentry *, int);
 

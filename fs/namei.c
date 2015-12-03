@@ -208,6 +208,13 @@ getname(const char __user * filename)
 }
 
 struct filename *
+getname_fixed_length(const char __user *filename, size_t length)
+{
+	/* TODO(ed): Implement. */
+	return getname(filename);
+}
+
+struct filename *
 getname_kernel(const char * filename)
 {
 	struct filename *result;
@@ -492,32 +499,6 @@ void path_put(const struct path *path)
 	mntput(path->mnt);
 }
 EXPORT_SYMBOL(path_put);
-
-#define EMBEDDED_LEVELS 2
-struct nameidata {
-	struct path	path;
-	struct qstr	last;
-	struct path	root;
-	struct inode	*inode; /* path.dentry.d_inode */
-	unsigned int	flags;
-	unsigned	seq, m_seq;
-	int		last_type;
-	unsigned	depth;
-	int		total_link_count;
-	struct saved {
-		struct path link;
-		void *cookie;
-		const char *name;
-		struct inode *inode;
-		unsigned seq;
-	} *stack, internal[EMBEDDED_LEVELS];
-	struct filename	*name;
-	struct nameidata *saved;
-	unsigned	root_seq;
-	int		dfd;
-	const struct capsicum_rights *rights;
-	struct fd	dfd_cap;
-};
 
 static void set_nameidata(struct nameidata *p, int dfd, struct filename *name,
 			  const struct capsicum_rights *rights)
@@ -1532,7 +1513,7 @@ static struct dentry *lookup_real(struct inode *dir, struct dentry *dentry,
 	return dentry;
 }
 
-static struct dentry *__lookup_hash(struct qstr *name,
+struct dentry *__lookup_hash(struct qstr *name,
 		struct dentry *base, unsigned int flags)
 {
 	bool need_lookup;
@@ -2417,7 +2398,7 @@ int _user_path_atr(int dfd,
  *     allocated by getname. So we must hold the reference to it until all
  *     path-walking is complete.
  */
-static inline struct filename *
+struct filename *
 user_path_parent(int dfd, const char __user *path,
 		 struct path *parent,
 		 struct qstr *last,
