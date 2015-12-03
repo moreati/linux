@@ -131,10 +131,10 @@ cloudabi_errno_t cloudabi_sys_file_link(
 
 	if (uap->fd1 & AT_SYMLINK_FOLLOW)
 		how |= LOOKUP_FOLLOW;
-	cap_rights_init(&rights, CAP_LINKAT);
+	cap_rights_init(&rights, CAP_LINKAT_TARGET);
 retry:
 	error = user_path_at_fixed_length(uap->fd1, uap->path1, uap->path1len,
-	    how, &old_path);
+	    how, &old_path, CAP_LINKAT_SOURCE);
 	if (error != 0)
 		return cloudabi_convert_errno(error);
 
