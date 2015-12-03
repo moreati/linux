@@ -2392,6 +2392,21 @@ int _user_path_atr(int dfd,
 }
 #endif
 
+int _user_path_at_fixed_length(int dfd, const char __user *name, size_t len,
+    unsigned flags, struct path *path, ...)
+{
+	struct capsicum_rights rights;
+	int rc;
+	va_list ap;
+
+	/* TODO(ed): Implement. */
+	va_start(ap, path);
+	rc = user_path_at_empty_rights(dfd, name, flags, path, NULL,
+				       cap_rights_vinit(&rights, ap));
+	va_end(ap);
+	return rc;
+}
+
 /*
  * NB: most callers don't do anything directly with the reference to the
  *     to struct filename, but the nd->last pointer points into the name string
@@ -3615,6 +3630,20 @@ inline struct dentry *user_path_create(int dfd, const char __user *pathname,
 			       lookup_flags, &lookup_rights);
 }
 EXPORT_SYMBOL(user_path_create);
+
+struct dentry *
+user_path_create_fixed_length(int dfd,
+			const char __user *pathname,
+			size_t pathlen,
+			struct path *path,
+			unsigned int lookup_flags,
+			const struct capsicum_rights *rights)
+{
+	/* TODO(ed): Implement. */
+	return user_path_create_rights(dfd, pathname, path, lookup_flags,
+	    rights);
+}
+EXPORT_SYMBOL(user_path_create_fixed_length);
 
 int vfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode, dev_t dev)
 {
