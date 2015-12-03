@@ -227,6 +227,13 @@ struct cloudabi_sys_mem_unmap_args {
 	ARG(void __user *, addr);
 	ARG(size_t, len);
 };
+struct cloudabi_sys_proc_exec_args {
+	ARG(cloudabi_fd_t, fd);
+	ARG(void __user *, data);
+	ARG(size_t, datalen);
+	ARG(const cloudabi_fd_t __user *, fds);
+	ARG(size_t, fdslen);
+};
 struct cloudabi_sys_proc_exit_args {
 	ARG(cloudabi_exitcode_t, rval);
 };
@@ -347,6 +354,8 @@ cloudabi_errno_t cloudabi_sys_mem_unlock(
     const struct cloudabi_sys_mem_unlock_args *, unsigned long *);
 cloudabi_errno_t cloudabi_sys_mem_unmap(
     const struct cloudabi_sys_mem_unmap_args *, unsigned long *);
+cloudabi_errno_t cloudabi_sys_proc_exec(
+    const struct cloudabi_sys_proc_exec_args *, unsigned long *);
 cloudabi_errno_t cloudabi_sys_proc_exit(
     const struct cloudabi_sys_proc_exit_args *, unsigned long *);
 cloudabi_errno_t cloudabi_sys_proc_fork(const void *, unsigned long *);

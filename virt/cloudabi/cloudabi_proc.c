@@ -73,6 +73,12 @@ convert_signal(cloudabi_signal_t in, int *out)
 	}
 }
 
+cloudabi_errno_t cloudabi_sys_proc_exec(
+    const struct cloudabi_sys_proc_exec_args *uap, unsigned long *retval)
+{
+	return CLOUDABI_ENOSYS;
+}
+
 cloudabi_errno_t cloudabi_sys_proc_exit(
     const struct cloudabi_sys_proc_exit_args *uap, unsigned long *retval) {
 	return cloudabi_convert_errno(sys_exit_group(uap->rval));

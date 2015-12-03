@@ -69,7 +69,7 @@ const cloudabi_syscall_t cloudabi64_syscalls[] = {
 	(cloudabi_syscall_t)cloudabi_sys_mem_unlock,
 	(cloudabi_syscall_t)cloudabi_sys_mem_unmap,
 	(cloudabi_syscall_t)cloudabi64_sys_poll,
-	(cloudabi_syscall_t)cloudabi64_sys_proc_exec,
+	(cloudabi_syscall_t)cloudabi_sys_proc_exec,
 	(cloudabi_syscall_t)cloudabi_sys_proc_exit,
 	(cloudabi_syscall_t)cloudabi_sys_proc_fork,
 	(cloudabi_syscall_t)cloudabi_sys_proc_raise,
