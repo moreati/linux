@@ -116,8 +116,14 @@ extern int bprm_change_interp(char *interp, struct linux_binprm *bprm);
 extern int copy_strings_kernel(int argc, const char *const *argv,
 			       struct linux_binprm *bprm);
 extern int prepare_bprm_creds(struct linux_binprm *bprm);
+extern int bprm_mm_init(struct linux_binprm *bprm);
+extern int exec_binprm(struct linux_binprm *bprm);
+extern void acct_arg_size(struct linux_binprm *bprm, unsigned long pages);
+extern void free_bprm(struct linux_binprm *bprm);
+extern void check_unsafe_exec(struct linux_binprm *bprm);
 extern void install_exec_creds(struct linux_binprm *bprm);
 extern void set_binfmt(struct linux_binfmt *new);
 extern ssize_t read_code(struct file *, unsigned long, loff_t, size_t);
+extern struct file *do_open_execat(int fd, struct filename *name, int flags);
 
 #endif /* _LINUX_BINFMTS_H */

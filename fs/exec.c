@@ -174,7 +174,7 @@ out:
  * for oom_badness()->get_mm_rss(). Once exec succeeds or fails, we
  * change the counter back via acct_arg_size(0).
  */
-static void acct_arg_size(struct linux_binprm *bprm, unsigned long pages)
+void acct_arg_size(struct linux_binprm *bprm, unsigned long pages)
 {
 	struct mm_struct *mm = current->mm;
 	long diff = (long)(pages - bprm->vma_pages);
@@ -302,7 +302,7 @@ static bool valid_arg_len(struct linux_binprm *bprm, long len)
 
 #else
 
-static inline void acct_arg_size(struct linux_binprm *bprm, unsigned long pages)
+void acct_arg_size(struct linux_binprm *bprm, unsigned long pages)
 {
 }
 
@@ -366,7 +366,7 @@ static bool valid_arg_len(struct linux_binprm *bprm, long len)
  * flags, permissions, and offset, so we use temporary values.  We'll update
  * them later in setup_arg_pages().
  */
-static int bprm_mm_init(struct linux_binprm *bprm)
+int bprm_mm_init(struct linux_binprm *bprm)
 {
 	int err;
 	struct mm_struct *mm = NULL;
@@ -758,7 +758,7 @@ EXPORT_SYMBOL(setup_arg_pages);
 
 #endif /* CONFIG_MMU */
 
-static struct file *do_open_execat(int fd, struct filename *name, int flags)
+struct file *do_open_execat(int fd, struct filename *name, int flags)
 {
 	struct file *file;
 	struct file *underlying;
@@ -1198,7 +1198,7 @@ int prepare_bprm_creds(struct linux_binprm *bprm)
 	return -ENOMEM;
 }
 
-static void free_bprm(struct linux_binprm *bprm)
+void free_bprm(struct linux_binprm *bprm)
 {
 	free_arg_pages(bprm);
 	if (bprm->cred) {
@@ -1260,7 +1260,7 @@ EXPORT_SYMBOL(install_exec_creds);
  * - the caller must hold ->cred_guard_mutex to protect against
  *   PTRACE_ATTACH or seccomp thread-sync
  */
-static void check_unsafe_exec(struct linux_binprm *bprm)
+void check_unsafe_exec(struct linux_binprm *bprm)
 {
 	struct task_struct *p = current, *t;
 	unsigned n_fs;
@@ -1468,7 +1468,7 @@ int search_binary_handler(struct linux_binprm *bprm)
 }
 EXPORT_SYMBOL(search_binary_handler);
 
-static int exec_binprm(struct linux_binprm *bprm)
+int exec_binprm(struct linux_binprm *bprm)
 {
 	pid_t old_pid, old_vpid;
 	int ret;

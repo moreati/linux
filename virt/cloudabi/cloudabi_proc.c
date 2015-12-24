@@ -23,7 +23,12 @@
  * SUCH DAMAGE.
  */
 
+#include <linux/binfmts.h>
+#include <linux/fdtable.h>
+#include <linux/fs_struct.h>
+#include <linux/slab.h>
 #include <linux/syscalls.h>
+#include <linux/tsacct_kern.h>
 
 #include "cloudabi_syscalldefs.h"
 #include "cloudabi_syscalls.h"
@@ -66,26 +71,134 @@ convert_signal(cloudabi_signal_t in, int *out)
 	    in == 0) {
 		/* Valid signal mapping. */
 		*out = signals[in];
-		return (0);
+		return 0;
 	} else {
 		/* Invalid signal. */
-		return (CLOUDABI_EINVAL);
+		return CLOUDABI_EINVAL;
 	}
 }
 
 cloudabi_errno_t cloudabi_sys_proc_exec(
     const struct cloudabi_sys_proc_exec_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct file *file;
+	struct files_struct *displaced;
+	struct filename *filename;
+	struct linux_binprm *bprm;
+	char *pathbuf = NULL;
+	int error;
+
+	filename = getname_kernel("");
+	if (IS_ERR(filename))
+		return cloudabi_convert_errno(PTR_ERR(filename));
+
+	if ((current->flags & PF_NPROC_EXCEEDED) &&
+	    atomic_read(&current_user()->processes) > rlimit(RLIMIT_NPROC)) {
+		error = -EAGAIN;
+		goto out_ret;
+	}
+
+	/* We're below the limit (still or again), so we don't want to make
+	 * further execve() calls fail. */
+	current->flags &= ~PF_NPROC_EXCEEDED;
+
+	/* TODO(ed): Install new file descriptor table layout. */
+	error = unshare_files(&displaced);
+	if (error != 0)
+		goto out_ret;
+
+	bprm = kzalloc(sizeof(*bprm), GFP_KERNEL);
+	if (bprm == NULL) {
+		error = -ENOMEM;
+		goto out_files;
+	}
+
+	error = prepare_bprm_creds(bprm);
+	if (error != 0)
+		goto out_free;
+
+	check_unsafe_exec(bprm);
+	current->in_execve = 1;
+
+	file = do_open_execat(uap->fd, filename, AT_EMPTY_PATH);
+	error = PTR_ERR(file);
+	if (IS_ERR(file))
+		goto out_unmark;
+
+	sched_exec();
+	bprm->file = file;
+	pathbuf = kasprintf(GFP_TEMPORARY, "/dev/fd/%u", uap->fd);
+	if (pathbuf == NULL) {
+		error = -ENOMEM;
+		goto out_unmark;
+	}
+	bprm->interp_flags |= BINPRM_FLAGS_PATH_INACCESSIBLE;
+	bprm->filename = pathbuf;
+	bprm->interp = bprm->filename;
+
+	error = bprm_mm_init(bprm);
+	if (error != 0)
+		goto out_unmark;
+
+	error = prepare_binprm(bprm);
+	if (error < 0)
+		goto out;
+
+	error = copy_strings_kernel(1, &bprm->filename, bprm);
+	if (error != 0)
+		goto out;
+
+	bprm->exec = bprm->p;
+
+	/* TODO(ed): Copy strings into the kernel. */
+
+	error = exec_binprm(bprm);
+	if (error != 0)
+		goto out;
+
+	/* execve succeeded */
+	current->fs->in_exec = 0;
+	current->in_execve = 0;
+	acct_update_integrals(current);
+	task_numa_free(current);
+	free_bprm(bprm);
+	kfree(pathbuf);
+	putname(filename);
+	if (displaced)
+		put_files_struct(displaced);
+	return 0;
+
+out:
+	if (bprm->mm) {
+		acct_arg_size(bprm, 0);
+		mmput(bprm->mm);
+	}
+
+out_unmark:
+	current->fs->in_exec = 0;
+	current->in_execve = 0;
+
+out_free:
+	free_bprm(bprm);
+	kfree(pathbuf);
+
+out_files:
+	if (displaced)
+		reset_files_struct(displaced);
+out_ret:
+	putname(filename);
+	return cloudabi_convert_errno(error);
 }
 
 cloudabi_errno_t cloudabi_sys_proc_exit(
-    const struct cloudabi_sys_proc_exit_args *uap, unsigned long *retval) {
+    const struct cloudabi_sys_proc_exit_args *uap, unsigned long *retval)
+{
 	return cloudabi_convert_errno(sys_exit_group(uap->rval));
 }
 
 cloudabi_errno_t cloudabi_sys_proc_fork(
-    const void *uap, unsigned long *retval) {
+    const void *uap, unsigned long *retval)
+{
 #if 0
 	struct clone4_args clone4_args = {};
 	struct clonefd_setup clonefd_setup;
@@ -121,7 +234,8 @@ cloudabi_errno_t cloudabi_sys_proc_fork(
 }
 
 cloudabi_errno_t cloudabi_sys_proc_raise(
-    const struct cloudabi_sys_proc_raise_args *uap, unsigned long *retval) {
+    const struct cloudabi_sys_proc_raise_args *uap, unsigned long *retval)
+{
 	struct k_sigaction sigdfl = {
 		.sa = {
 			.sa_handler = SIG_DFL,
