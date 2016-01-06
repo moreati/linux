@@ -125,5 +125,10 @@ extern void install_exec_creds(struct linux_binprm *bprm);
 extern void set_binfmt(struct linux_binfmt *new);
 extern ssize_t read_code(struct file *, unsigned long, loff_t, size_t);
 extern struct file *do_open_execat(int fd, struct filename *name, int flags);
+extern struct page *get_arg_page(struct linux_binprm *bprm, unsigned long pos,
+		int write);
+extern void put_arg_page(struct page *page);
+extern void flush_arg_page(struct linux_binprm *bprm, unsigned long pos,
+		struct page *page);
 
 #endif /* _LINUX_BINFMTS_H */

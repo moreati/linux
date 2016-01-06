@@ -26,6 +26,7 @@
 #include <linux/binfmts.h>
 #include <linux/fdtable.h>
 #include <linux/fs_struct.h>
+#include <linux/highmem.h>
 #include <linux/slab.h>
 #include <linux/syscalls.h>
 #include <linux/tsacct_kern.h>
@@ -35,8 +36,7 @@
 #include "cloudabi_util.h"
 
 /* Converts CloudABI's signal numbers to Linux's. */
-static cloudabi_errno_t
-convert_signal(cloudabi_signal_t in, int *out)
+static cloudabi_errno_t convert_signal(cloudabi_signal_t in, int *out)
 {
 	static const int signals[] = {
 		[CLOUDABI_SIGABRT] = SIGABRT,
@@ -76,6 +76,81 @@ convert_signal(cloudabi_signal_t in, int *out)
 		/* Invalid signal. */
 		return CLOUDABI_EINVAL;
 	}
+}
+
+/* Copies argument data to the stack of the new executable. */
+/* TODO(ed): is the buffer size properly propagated? */
+static int copy_argdata(struct linux_binprm *bprm, const void *src,
+    size_t srclen) {
+	struct page *kmapped_page = NULL;
+	unsigned long bytes_to_copy, dstpos, dstoff, kpos;
+	const char *srcpos;
+	char *kaddr;
+	int ret;
+
+	/* Subtract space from the end to fit the argument data. */
+	dstpos = bprm->p;
+	if (srclen > dstpos)
+		return -E2BIG;
+	bprm->p -= srclen;
+
+	srcpos = (const char *)src + srclen;
+	while (srclen > 0) {
+		/* Cancellation point. */
+		if (fatal_signal_pending(current)) {
+			ret = -ERESTARTNOHAND;
+			goto out;
+		}
+		cond_resched();
+
+		/* Determine how much data to copy. */
+		dstoff = dstpos % PAGE_SIZE;
+		if (dstoff == 0)
+			dstoff = PAGE_SIZE;
+		bytes_to_copy = dstoff < srclen ? dstoff : srclen;
+
+		dstpos -= bytes_to_copy;
+		dstoff -= bytes_to_copy;
+		srcpos -= bytes_to_copy;
+		srclen -= bytes_to_copy;
+
+		/* Map a new page if we've crossed the page boundary. */
+		if (!kmapped_page || kpos != (dstpos & PAGE_MASK)) {
+			struct page *page;
+
+			page = get_arg_page(bprm, dstpos, 1);
+			if (!page) {
+				ret = -E2BIG;
+				goto out;
+			}
+
+			if (kmapped_page) {
+				flush_kernel_dcache_page(kmapped_page);
+				kunmap(kmapped_page);
+				put_arg_page(kmapped_page);
+			}
+			kmapped_page = page;
+			kaddr = kmap(kmapped_page);
+			kpos = dstpos & PAGE_MASK;
+			flush_arg_page(bprm, kpos, kmapped_page);
+		}
+
+		/* Copy argument data into page. */
+		if (copy_from_user(kaddr + dstoff, srcpos, bytes_to_copy)) {
+			ret = -EFAULT;
+			goto out;
+		}
+	}
+	ret = 0;
+
+out:
+	/* Unmap page if still mapped. */
+	if (kmapped_page) {
+		flush_kernel_dcache_page(kmapped_page);
+		kunmap(kmapped_page);
+		put_arg_page(kmapped_page);
+	}
+	return ret;
 }
 
 cloudabi_errno_t cloudabi_sys_proc_exec(
@@ -150,7 +225,10 @@ cloudabi_errno_t cloudabi_sys_proc_exec(
 
 	bprm->exec = bprm->p;
 
-	/* TODO(ed): Copy strings into the kernel. */
+	/* Copy argument data to the new process. */
+	error = copy_argdata(bprm, uap->data, uap->datalen);
+	if (error != 0)
+		goto out;
 
 	error = exec_binprm(bprm);
 	if (error != 0)

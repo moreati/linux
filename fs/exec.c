@@ -186,7 +186,7 @@ void acct_arg_size(struct linux_binprm *bprm, unsigned long pages)
 	add_mm_counter(mm, MM_ANONPAGES, diff);
 }
 
-static struct page *get_arg_page(struct linux_binprm *bprm, unsigned long pos,
+struct page *get_arg_page(struct linux_binprm *bprm, unsigned long pos,
 		int write)
 {
 	struct page *page;
@@ -234,7 +234,7 @@ static struct page *get_arg_page(struct linux_binprm *bprm, unsigned long pos,
 	return page;
 }
 
-static void put_arg_page(struct page *page)
+void put_arg_page(struct page *page)
 {
 	put_page(page);
 }
@@ -247,7 +247,7 @@ static void free_arg_pages(struct linux_binprm *bprm)
 {
 }
 
-static void flush_arg_page(struct linux_binprm *bprm, unsigned long pos,
+void flush_arg_page(struct linux_binprm *bprm, unsigned long pos,
 		struct page *page)
 {
 	flush_cache_page(bprm->vma, pos, page_to_pfn(page));
@@ -306,7 +306,7 @@ void acct_arg_size(struct linux_binprm *bprm, unsigned long pages)
 {
 }
 
-static struct page *get_arg_page(struct linux_binprm *bprm, unsigned long pos,
+struct page *get_arg_page(struct linux_binprm *bprm, unsigned long pos,
 		int write)
 {
 	struct page *page;
@@ -322,7 +322,7 @@ static struct page *get_arg_page(struct linux_binprm *bprm, unsigned long pos,
 	return page;
 }
 
-static void put_arg_page(struct page *page)
+void put_arg_page(struct page *page)
 {
 }
 
@@ -342,7 +342,7 @@ static void free_arg_pages(struct linux_binprm *bprm)
 		free_arg_page(bprm, i);
 }
 
-static void flush_arg_page(struct linux_binprm *bprm, unsigned long pos,
+void flush_arg_page(struct linux_binprm *bprm, unsigned long pos,
 		struct page *page)
 {
 }
