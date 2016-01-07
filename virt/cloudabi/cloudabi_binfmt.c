@@ -117,15 +117,17 @@ static unsigned long cloudabi_binfmt_phdr_map(struct file *file,
 
 static int cloudabi_binfmt_init_stack(struct linux_binprm *bprm,
     struct elfhdr *hdr, unsigned long load_addr) {
+	struct mm_struct *mm = current->mm;
+	unsigned long argdatalen = mm->arg_end - mm->arg_start;
 	unsigned long p;
 
 	/* Create an auxiliary vector. */
 	cloudabi64_auxv_t auxv[] = {
 #define	VAL(type, val)	{ .a_type = (type), .a_val = (val) }
 #define	PTR(type, ptr)	{ .a_type = (type), .a_ptr = (uintptr_t)(ptr) }
-		VAL(CLOUDABI_AT_ARGDATA, current->mm->arg_start),
+		VAL(CLOUDABI_AT_ARGDATA, mm->arg_start),
 		VAL(CLOUDABI_AT_ARGDATALEN,
-		    current->mm->arg_end - current->mm->arg_start - 1),
+		    argdatalen > 0 ? argdatalen - 1 : 0),
 		/* TODO(ed): CLOUDABI_AT_CANARY{,LEN}. */
 		VAL(CLOUDABI_AT_PAGESZ, PAGE_SIZE),
 		PTR(CLOUDABI_AT_PHDR, load_addr + hdr->e_phoff),
@@ -159,11 +161,12 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 	struct elfhdr *hdr;
 	struct elf_phdr *phdr, *phdrs;
 	struct file *file;
+	struct mm_struct *mm;
 	struct pt_regs *regs;
 	size_t phdrslen;
 	unsigned long bss, brk, addr, entry, start_code, end_code, start_data,
-	    end_data, len, load_addr;
-	int error, i;
+	    end_data, len, load_addr, p;
+	int argc, error, i;
 	bool load_addr_set;
 
 	/*
@@ -221,7 +224,8 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 	    EXSTACK_DISABLE_X);
 	if (error != 0)
 		goto out;
-	current->mm->start_stack = bprm->p;
+	mm = current->mm;
+	mm->start_stack = bprm->p;
 
 	bss = 0;
 	brk = 0;
@@ -299,20 +303,29 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 
 	set_binfmt(&cloudabi_binfmt_format);
 
+	/* Determine where argument and environment data starts/ends. */
+	p = mm->arg_end = mm->arg_start;
+	for (argc = bprm->argc; argc > 0; argc--) {
+		size_t len = strnlen_user((void __user *)p, MAX_ARG_STRLEN);
+		if (!len || len > MAX_ARG_STRLEN)
+			return -EINVAL;
+		p += len;
+	}
+	mm->arg_end = mm->env_start = mm->env_end = p;
+
 	install_exec_creds(bprm);
 	error = cloudabi_binfmt_init_stack(bprm, hdr, load_addr);
 	if (error != 0)
 		goto out;
 
-	current->mm->start_code = start_code;
-	current->mm->end_code = end_code;
-	current->mm->start_data = start_data;
-	current->mm->end_data = end_data;
-	current->mm->start_stack = bprm->p;
+	mm->start_code = start_code;
+	mm->end_code = end_code;
+	mm->start_data = start_data;
+	mm->end_data = end_data;
+	mm->start_stack = bprm->p;
 
 	if ((current->flags & PF_RANDOMIZE) != 0 && randomize_va_space > 1) {
-		current->mm->brk = current->mm->start_brk =
-		    arch_randomize_brk(current->mm);
+		mm->brk = mm->start_brk = arch_randomize_brk(mm);
 #ifdef CONFIG_COMPAT_BRK
 		current->brk_randomized = 1;
 #endif
