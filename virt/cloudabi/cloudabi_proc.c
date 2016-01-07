@@ -79,21 +79,29 @@ static cloudabi_errno_t convert_signal(cloudabi_signal_t in, int *out)
 }
 
 /* Copies argument data to the stack of the new executable. */
-/* TODO(ed): is the buffer size properly propagated? */
 static int copy_argdata(struct linux_binprm *bprm, const void *src,
     size_t srclen) {
 	struct page *kmapped_page = NULL;
-	unsigned long bytes_to_copy, dstpos, dstoff, kpos;
+	unsigned long bytes_to_copy, dstpos, dstoff, kpos, i;
 	const char *srcpos;
 	char *kaddr;
 	int ret;
 
-	/* Subtract space from the end to fit the argument data. */
-	dstpos = bprm->p;
-	if (srclen > dstpos)
-		return -E2BIG;
-	bprm->p -= srclen;
+	/* No arguments to be provided to the executable. */
+	if (srclen == 0)
+		return 0;
 
+	/*
+	 * Subtract space from the end to fit the argument data. As the
+	 * kernel expects the arguments to be strings, but CloudABI
+	 * argument data is binary safe, ensure null termination.
+	 */
+	dstpos = bprm->p;
+	if (srclen >= dstpos--)
+		return -E2BIG;
+	bprm->p = dstpos - srclen;
+
+	bprm->argc = 1;
 	srcpos = (const char *)src + srclen;
 	while (srclen > 0) {
 		/* Cancellation point. */
@@ -139,6 +147,12 @@ static int copy_argdata(struct linux_binprm *bprm, const void *src,
 		if (copy_from_user(kaddr + dstoff, srcpos, bytes_to_copy)) {
 			ret = -EFAULT;
 			goto out;
+		}
+
+		/* Count number of null bytes, so that argc is correct. */
+		for (i = 0; i < bytes_to_copy; ++i) {
+			if (srcpos[i] == '\0')
+				++bprm->argc;
 		}
 	}
 	ret = 0;
