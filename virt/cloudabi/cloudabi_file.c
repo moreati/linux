@@ -225,7 +225,7 @@ cloudabi_errno_t cloudabi_sys_file_open(
 		return CLOUDABI_EINVAL;
 
 	/* TODO(ed): Respect path length! */
-	fd = sys_openat(uap->fd, uap->path, oflags, 0777);
+	fd = sys_openat((cloudabi_fd_t)uap->fd, uap->path, oflags, 0777);
 	if (fd < 0)
 		return cloudabi_convert_errno(fd);
 	retval[0] = fd;
