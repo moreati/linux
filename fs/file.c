@@ -453,10 +453,8 @@ struct files_struct *remap_files_struct(struct files_struct *oldf,
 	/* Copy the file descriptors from the old table into the new table. */
 	new_fds = new_fdt->fd;
 	for (i = 0; i < fdslen; ++i) {
-		int fd = fds[i];
-		struct file *f = old_fds[fd];
-
-		__set_open_fd(fd, new_fdt);
+		struct file *f = old_fds[fds[i]];
+		__set_open_fd(i, new_fdt);
 		get_file(f);
 		rcu_assign_pointer(*new_fds++, f);
 	}
