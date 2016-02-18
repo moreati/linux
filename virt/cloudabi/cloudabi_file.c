@@ -543,7 +543,7 @@ cloudabi_errno_t cloudabi_sys_file_stat_get(
 	    LOOKUP_FOLLOW : 0;
 retry:
 	error = user_path_at_fixed_length(uap->fd, uap->path, uap->pathlen,
-	    lookup_flags, &path, CAP_FSTAT);
+	    lookup_flags, &path, CAP_FSTATAT);
 	if (error != 0)
 		return cloudabi_convert_errno(error);
 
@@ -564,7 +564,41 @@ retry:
 cloudabi_errno_t cloudabi_sys_file_stat_put(
     const struct cloudabi_sys_file_stat_put_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	cloudabi_filestat_t fs;
+	struct timespec ts[2];
+	struct path path;
+	int error, lookup_flags = 0;
+
+	/*
+	 * Only support timestamp modification for now, as there is no
+	 * truncateat().
+	 */
+	if ((uap->flags & ~(CLOUDABI_FILESTAT_ATIM |
+	    CLOUDABI_FILESTAT_ATIM_NOW | CLOUDABI_FILESTAT_MTIM |
+	    CLOUDABI_FILESTAT_MTIM_NOW)) != 0)
+		return CLOUDABI_EINVAL;
+
+	if (copy_from_user(&fs, uap->buf, sizeof(fs)) != 0)
+		return CLOUDABI_EFAULT;
+	convert_utimens_arguments(&fs, uap->flags, ts);
+
+	if (uap->fd & CLOUDABI_LOOKUP_SYMLINK_FOLLOW)
+		lookup_flags |= LOOKUP_FOLLOW;
+retry:
+	error = user_path_at_fixed_length(uap->fd, uap->path, uap->pathlen,
+	    lookup_flags, &path, CAP_FUTIMESAT);
+	if (error)
+		goto out;
+
+	error = utimes_common(&path, ts);
+	path_put(&path);
+	if (retry_estale(error, lookup_flags)) {
+		lookup_flags |= LOOKUP_REVAL;
+		goto retry;
+	}
+
+out:
+	return cloudabi_convert_errno(error);
 }
 
 cloudabi_errno_t cloudabi_sys_file_symlink(

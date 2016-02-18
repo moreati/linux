@@ -174,7 +174,9 @@ extern int do_getitimer(int which, struct itimerval *value);
 
 extern unsigned int alarm_setitimer(unsigned int seconds);
 
+struct path;
 extern long do_utimes(int dfd, const char __user *filename, struct timespec *times, int flags);
+extern int utimes_common(struct path *path, struct timespec *times);
 
 struct tms;
 extern void do_sys_times(struct tms *);
