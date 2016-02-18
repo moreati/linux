@@ -184,7 +184,28 @@ cloudabi_errno_t cloudabi_sys_fd_stat_get(
 cloudabi_errno_t cloudabi_sys_fd_stat_put(
     const struct cloudabi_sys_fd_stat_put_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	cloudabi_fdstat_t fsb;
+	int oflags;
+
+	if (copy_from_user(&fsb, uap->buf, sizeof(fsb)) != 0)
+		return CLOUDABI_EFAULT;
+
+	if (uap->flags == CLOUDABI_FDSTAT_FLAGS) {
+		/* Convert flags. */
+		oflags = 0;
+		if (fsb.fs_flags & CLOUDABI_FDFLAG_APPEND)
+			oflags |= O_APPEND;
+		if (fsb.fs_flags & CLOUDABI_FDFLAG_DSYNC)
+			oflags |= O_DSYNC;
+		if (fsb.fs_flags & CLOUDABI_FDFLAG_NONBLOCK)
+			oflags |= O_NONBLOCK;
+		if (fsb.fs_flags &
+		    (CLOUDABI_FDFLAG_SYNC | CLOUDABI_FDFLAG_RSYNC))
+			oflags |= O_SYNC;
+		return cloudabi_convert_errno(
+		    sys_fcntl(uap->fd, F_SETFL, oflags));
+	}
+	return CLOUDABI_EINVAL;
 }
 
 cloudabi_errno_t cloudabi_sys_fd_sync(
