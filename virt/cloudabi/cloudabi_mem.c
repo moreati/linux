@@ -93,8 +93,11 @@ cloudabi_errno_t cloudabi_sys_mem_map(
 
 	/* Translate flags. */
 	flags = 0;
-	if (uap->flags & CLOUDABI_MAP_ANON)
+	if (uap->flags & CLOUDABI_MAP_ANON) {
 		flags |= MAP_ANONYMOUS;
+		if (uap->fd != CLOUDABI_MAP_ANON_FD)
+			return CLOUDABI_EINVAL;
+	}
 	if (uap->flags & CLOUDABI_MAP_FIXED)
 		flags |= MAP_FIXED;
 	if (uap->flags & CLOUDABI_MAP_PRIVATE)
