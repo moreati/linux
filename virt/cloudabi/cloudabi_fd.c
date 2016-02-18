@@ -140,7 +140,7 @@ cloudabi_errno_t cloudabi_sys_fd_seek(
 		return CLOUDABI_EINVAL;
 	}
 
-	offset = sys_lseek(uap->fd, uap->offset, uap->whence);
+	offset = sys_lseek(uap->fd, uap->offset, whence);
 	if (offset < 0)
 		return cloudabi_convert_errno(offset);
 	retval[0] = offset;
