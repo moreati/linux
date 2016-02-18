@@ -23,6 +23,7 @@
  * SUCH DAMAGE.
  */
 
+#include <linux/audit.h>
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/net.h>
@@ -70,10 +71,77 @@ cloudabi_errno_t cloudabi_sys_fd_create1(
 	return 0;
 }
 
+static cloudabi_errno_t do_socketpair(int type, unsigned long *retval) {
+	struct socket *sock1, *sock2;
+	int fd1, fd2, err;
+	struct file *newfile1, *newfile2;
+
+	err = sock_create(AF_UNIX, type, 0, &sock1);
+	if (err < 0)
+		goto out;
+
+	err = sock_create(AF_UNIX, type, 0, &sock2);
+	if (err < 0)
+		goto out_release_1;
+
+	err = sock1->ops->socketpair(sock1, sock2);
+	if (err < 0)
+		goto out_release_both;
+
+	fd1 = get_unused_fd_flags(0);
+	if (unlikely(fd1 < 0)) {
+		err = fd1;
+		goto out_release_both;
+	}
+
+	fd2 = get_unused_fd_flags(0);
+	if (unlikely(fd2 < 0)) {
+		err = fd2;
+		goto out_put_unused_1;
+	}
+
+	newfile1 = sock_alloc_file(sock1, 0, NULL);
+	if (IS_ERR(newfile1)) {
+		err = PTR_ERR(newfile1);
+		goto out_put_unused_both;
+	}
+
+	newfile2 = sock_alloc_file(sock2, 0, NULL);
+	if (IS_ERR(newfile2)) {
+		err = PTR_ERR(newfile2);
+		goto out_fput_1;
+	}
+
+	audit_fd_pair(fd1, fd2);
+
+	fd_install(fd1, newfile1);
+	fd_install(fd2, newfile2);
+	retval[0] = fd1;
+	retval[1] = fd2;
+	return 0;
+
+out_fput_1:
+	fput(newfile1);
+	put_unused_fd(fd2);
+	put_unused_fd(fd1);
+	sock_release(sock2);
+	goto out;
+
+out_put_unused_both:
+	put_unused_fd(fd2);
+out_put_unused_1:
+	put_unused_fd(fd1);
+out_release_both:
+	sock_release(sock2);
+out_release_1:
+	sock_release(sock1);
+out:
+	return cloudabi_convert_errno(err);
+}
+
 cloudabi_errno_t cloudabi_sys_fd_create2(
     const struct cloudabi_sys_fd_create2_args *uap, unsigned long *retval)
 {
-	/* TODO(ed): Add support for socket pairs. */
 	switch (uap->type) {
 	case CLOUDABI_FILETYPE_FIFO: {
 		int fds[2];
@@ -86,6 +154,12 @@ cloudabi_errno_t cloudabi_sys_fd_create2(
 		retval[1] = fds[1];
 		return 0;
 	}
+	case CLOUDABI_FILETYPE_SOCKET_DGRAM:
+		return do_socketpair(SOCK_DGRAM, retval);
+	case CLOUDABI_FILETYPE_SOCKET_SEQPACKET:
+		return do_socketpair(SOCK_SEQPACKET, retval);
+	case CLOUDABI_FILETYPE_SOCKET_STREAM:
+		return do_socketpair(SOCK_STREAM, retval);
 	default:
 		return CLOUDABI_EINVAL;
 	}
