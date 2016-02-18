@@ -384,6 +384,95 @@ out:
 	return NULL;
 }
 
+/*
+ * Creates a new file descriptor table, filling it with files from
+ * another file descriptor. The caller passes in a list of file
+ * descriptor numbers that will be used to determine the layout of the
+ * new table.
+ */
+struct files_struct *remap_files_struct(struct files_struct *oldf,
+    const int *fds, size_t fdslen, int *errorp)
+{
+	struct files_struct *newf;
+	struct file **old_fds, **new_fds;
+	int i;
+	struct fdtable *old_fdt, *new_fdt;
+
+	*errorp = -ENOMEM;
+	newf = kmem_cache_alloc(files_cachep, GFP_KERNEL);
+	if (!newf)
+		goto out;
+
+	atomic_set(&newf->count, 1);
+
+	spin_lock_init(&newf->file_lock);
+	newf->resize_in_progress = false;
+	init_waitqueue_head(&newf->resize_wait);
+	newf->next_fd = 0;
+	new_fdt = &newf->fdtab;
+	new_fdt->max_fds = NR_OPEN_DEFAULT;
+	new_fdt->close_on_exec = newf->close_on_exec_init;
+	new_fdt->open_fds = newf->open_fds_init;
+	new_fdt->full_fds_bits = newf->full_fds_bits_init;
+	new_fdt->fd = &newf->fd_array[0];
+
+	/* Check whether we need to allocate a larger fd array and fd set. */
+	if (unlikely(fdslen > new_fdt->max_fds)) {
+		new_fdt = alloc_fdtable(fdslen - 1);
+		if (!new_fdt) {
+			*errorp = -ENOMEM;
+			goto out_release;
+		}
+
+		/* Beyond sysctl_nr_open; nothing to do. */
+		if (unlikely(new_fdt->max_fds < fdslen)) {
+			__free_fdtable(new_fdt);
+			*errorp = -EMFILE;
+			goto out_release;
+		}
+	}
+
+	/* Clear file descriptor table bitmasks. */
+	memset(new_fdt->open_fds, 0, new_fdt->max_fds / BITS_PER_BYTE);
+	memset(new_fdt->close_on_exec, 0, new_fdt->max_fds / BITS_PER_BYTE);
+	memset(new_fdt->full_fds_bits, 0, BITBIT_SIZE(new_fdt->max_fds));
+
+	/* Test the validity of the list of file descriptors provided. */
+	spin_lock(&oldf->file_lock);
+	old_fdt = files_fdtable(oldf);
+	old_fds = old_fdt->fd;
+	for (i = 0; i < fdslen; ++i) {
+		if (fds[i] < 0 || fds[i] >= old_fdt->max_fds ||
+		    old_fds[fds[i]] == NULL) {
+			*errorp = -EBADF;
+			spin_unlock(&oldf->file_lock);
+			goto out_release;
+		}
+	}
+
+	/* Copy the file descriptors from the old table into the new table. */
+	new_fds = new_fdt->fd;
+	for (i = 0; i < fdslen; ++i) {
+		int fd = fds[i];
+		struct file *f = old_fds[fd];
+
+		__set_open_fd(fd, new_fdt);
+		get_file(f);
+		rcu_assign_pointer(*new_fds++, f);
+	}
+	spin_unlock(&oldf->file_lock);
+
+	/* Clear the remainder of the file descriptor table. */
+	memset(new_fds, 0, (new_fdt->max_fds - fdslen) * sizeof(struct file *));
+	rcu_assign_pointer(newf->fdt, new_fdt);
+	return newf;
+
+out_release:
+	kmem_cache_free(files_cachep, newf);
+out:
+	return NULL;
+}
+
 static struct fdtable *close_files(struct files_struct * files)
 {
 	/*

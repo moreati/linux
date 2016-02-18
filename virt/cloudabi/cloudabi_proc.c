@@ -171,35 +171,58 @@ cloudabi_errno_t cloudabi_sys_proc_exec(
     const struct cloudabi_sys_proc_exec_args *uap, unsigned long *retval)
 {
 	struct file *file;
-	struct files_struct *displaced;
+	struct files_struct *old_files, *new_files;
 	struct filename *filename;
 	struct linux_binprm *bprm;
+	int *new_fds;
 	char *pathbuf = NULL;
 	int error;
 
+	/*
+	 * Ensure that the new file descriptor table argument is of a
+	 * limited size. The new file descriptor table cannot be larger
+	 * than the existing one.
+	 */
+	old_files = current->files;
+	if (uap->fdslen > old_files->fdtab.max_fds)
+		return CLOUDABI_EINVAL;
+
+	/*
+	 * Construct a new file descriptor table that has some of the
+	 * original file descriptors remapped to a provided layout.
+	 */
+	new_fds = kmalloc(sizeof(int) * uap->fdslen, GFP_KERNEL);
+	if (new_fds == NULL)
+		return CLOUDABI_ENOMEM;
+	if (copy_from_user(new_fds, uap->fds, sizeof(int) * uap->fdslen)) {
+		kfree(new_fds);
+		return CLOUDABI_EFAULT;
+	}
+	new_files = remap_files_struct(old_files, new_fds, uap->fdslen, &error);
+	kfree(new_fds);
+	if (new_files == NULL)
+		return cloudabi_convert_errno(error);
+
 	filename = getname_kernel("");
-	if (IS_ERR(filename))
-		return cloudabi_convert_errno(PTR_ERR(filename));
+	if (IS_ERR(filename)) {
+		error = PTR_ERR(filename);
+		goto out_files;
+	}
 
 	if ((current->flags & PF_NPROC_EXCEEDED) &&
 	    atomic_read(&current_user()->processes) > rlimit(RLIMIT_NPROC)) {
 		error = -EAGAIN;
-		goto out_ret;
+		goto out_filename;
 	}
 
 	/* We're below the limit (still or again), so we don't want to make
 	 * further execve() calls fail. */
 	current->flags &= ~PF_NPROC_EXCEEDED;
 
-	/* TODO(ed): Install new file descriptor table layout. */
-	error = unshare_files(&displaced);
-	if (error != 0)
-		goto out_ret;
-
 	bprm = kzalloc(sizeof(*bprm), GFP_KERNEL);
 	if (bprm == NULL) {
 		error = -ENOMEM;
-		goto out_files;
+		goto out_filename;
 	}
 
 	error = prepare_bprm_creds(bprm);
@@ -256,8 +279,7 @@ cloudabi_errno_t cloudabi_sys_proc_exec(
 	free_bprm(bprm);
 	kfree(pathbuf);
 	putname(filename);
-	if (displaced)
-		put_files_struct(displaced);
+	reset_files_struct(new_files);
 	return 0;
 
 out:
@@ -274,11 +296,11 @@ out_free:
 	free_bprm(bprm);
 	kfree(pathbuf);
 
-out_files:
-	if (displaced)
-		reset_files_struct(displaced);
-out_ret:
+out_filename:
 	putname(filename);
+
+out_files:
+	put_files_struct(new_files);
 	return cloudabi_convert_errno(error);
 }
 

@@ -104,6 +104,8 @@ struct task_struct;
 struct files_struct *get_files_struct(struct task_struct *);
 void put_files_struct(struct files_struct *fs);
 void reset_files_struct(struct files_struct *);
+struct files_struct *remap_files_struct(struct files_struct *,
+    const int *, size_t, int *);
 int unshare_files(struct files_struct **);
 struct files_struct *dup_fd(struct files_struct *, int *);
 void do_close_on_exec(struct files_struct *);
