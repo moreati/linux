@@ -2,6 +2,7 @@
 #define _LINUX_NAMEI_H
 
 #include <linux/dcache.h>
+#include <linux/delayed_call.h>
 #include <linux/file.h>
 #include <linux/kernel.h>
 #include <linux/path.h>
@@ -62,13 +63,13 @@ struct nameidata {
 	int		total_link_count;
 	struct saved {
 		struct path link;
-		void *cookie;
+		struct delayed_call done;
 		const char *name;
-		struct inode *inode;
 		unsigned seq;
 	} *stack, internal[EMBEDDED_LEVELS];
 	struct filename	*name;
 	struct nameidata *saved;
+	struct inode	*link_inode;
 	unsigned	root_seq;
 	int		dfd;
 	const struct capsicum_rights *rights;
@@ -127,6 +128,7 @@ extern struct filename *user_path_parent_fixed_length(int, const char __user *, 
 struct dentry *__lookup_hash(struct qstr *name, struct dentry *base, unsigned int flags);
 
 extern struct dentry *lookup_one_len(const char *, struct dentry *, int);
+extern struct dentry *lookup_one_len_unlocked(const char *, struct dentry *, int);
 
 extern int follow_down_one(struct path *);
 extern int follow_down(struct path *);
