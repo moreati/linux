@@ -316,7 +316,7 @@ retry:
 	if (old_path.mnt != new_path.mnt)
 		goto exit2;
 
-	error = -EBUSY;
+	error = -EINVAL;
 	if (old_type != LAST_NORM)
 		goto exit2;
 
