@@ -216,7 +216,16 @@ static int do_fsync(unsigned int fd, int datasync)
 	int ret;
 
 	if (!IS_ERR(f.file)) {
-		ret = vfs_fsync(f.file, datasync);
+		if (datasync && (f.file->f_mode & FMODE_WRITE) == 0) {
+			/*
+			 * POSIX requires that fdatasync() returns
+			 * EBADF if the descriptor is not open for
+			 * writing.
+			 */
+			ret = -EBADF;
+		} else {
+			ret = vfs_fsync(f.file, datasync);
+		}
 		fdput(f);
 	} else {
 		ret = PTR_ERR(f.file);
