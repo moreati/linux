@@ -613,8 +613,154 @@ out_putname:
 	return cloudabi_convert_errno(error);
 }
 
+static cloudabi_errno_t do_unlink(
+    const struct cloudabi_sys_file_unlink_args *uap, unsigned long *retval)
+{
+	int error;
+	struct filename *name;
+	struct dentry *dentry;
+	struct path path;
+	struct qstr last;
+	int type;
+	struct inode *inode = NULL;
+	struct inode *delegated_inode = NULL;
+	unsigned int lookup_flags = 0;
+	struct capsicum_rights rights;
+
+	cap_rights_init(&rights, CAP_UNLINKAT);
+retry:
+	name = user_path_parent_fixed_length(uap->fd, uap->path, uap->pathlen,
+				&path, &last, &type, lookup_flags, &rights);
+	if (IS_ERR(name))
+		return cloudabi_convert_errno(PTR_ERR(name));
+
+	error = -EPERM;
+	if (type != LAST_NORM)
+		goto exit1;
+
+	error = mnt_want_write(path.mnt);
+	if (error)
+		goto exit1;
+retry_deleg:
+	mutex_lock_nested(&path.dentry->d_inode->i_mutex, I_MUTEX_PARENT);
+	dentry = __lookup_hash(&last, path.dentry, lookup_flags);
+	error = PTR_ERR(dentry);
+	if (!IS_ERR(dentry)) {
+		/* Why not before? Because we want correct error value */
+		if (last.name[last.len])
+			goto slashes;
+		inode = dentry->d_inode;
+		if (d_is_negative(dentry))
+			goto slashes;
+		ihold(inode);
+		error = security_path_unlink(&path, dentry);
+		if (error)
+			goto exit2;
+		error = vfs_unlink(path.dentry->d_inode, dentry, &delegated_inode);
+		if (error == -EISDIR)
+			error = -EPERM;
+exit2:
+		dput(dentry);
+	}
+	mutex_unlock(&path.dentry->d_inode->i_mutex);
+	if (inode)
+		iput(inode);	/* truncate the inode here */
+	inode = NULL;
+	if (delegated_inode) {
+		error = break_deleg_wait(&delegated_inode);
+		if (!error)
+			goto retry_deleg;
+	}
+	mnt_drop_write(path.mnt);
+exit1:
+	path_put(&path);
+	putname(name);
+	if (retry_estale(error, lookup_flags)) {
+		lookup_flags |= LOOKUP_REVAL;
+		inode = NULL;
+		goto retry;
+	}
+	return cloudabi_convert_errno(error);
+
+slashes:
+	if (d_is_negative(dentry))
+		error = -ENOENT;
+	else if (d_is_dir(dentry))
+		error = -EPERM;
+	else
+		error = -ENOTDIR;
+	goto exit2;
+}
+
+static cloudabi_errno_t do_rmdir(
+    const struct cloudabi_sys_file_unlink_args *uap, unsigned long *retval)
+{
+	int error = 0;
+	struct filename *name;
+	struct dentry *dentry;
+	struct capsicum_rights rights;
+	struct path path;
+	struct qstr last;
+	int type;
+	unsigned int lookup_flags = 0;
+
+	cap_rights_init(&rights, CAP_UNLINKAT);
+retry:
+	name = user_path_parent_fixed_length(uap->fd, uap->path,
+	                                     uap->pathlen, &path, &last, &type,
+	                                     lookup_flags, &rights);
+	if (IS_ERR(name))
+		return cloudabi_convert_errno(PTR_ERR(name));
+
+	switch (type) {
+	case LAST_DOTDOT:
+		error = -ENOTEMPTY;
+		goto exit1;
+	case LAST_DOT:
+		error = -EINVAL;
+		goto exit1;
+	case LAST_ROOT:
+		error = -EBUSY;
+		goto exit1;
+	}
+
+	error = mnt_want_write(path.mnt);
+	if (error)
+		goto exit1;
+
+	mutex_lock_nested(&path.dentry->d_inode->i_mutex, I_MUTEX_PARENT);
+	dentry = __lookup_hash(&last, path.dentry, lookup_flags);
+	error = PTR_ERR(dentry);
+	if (IS_ERR(dentry))
+		goto exit2;
+	if (!dentry->d_inode) {
+		error = -ENOENT;
+		goto exit3;
+	}
+	error = security_path_rmdir(&path, dentry);
+	if (error)
+		goto exit3;
+	error = vfs_rmdir(path.dentry->d_inode, dentry);
+exit3:
+	dput(dentry);
+exit2:
+	mutex_unlock(&path.dentry->d_inode->i_mutex);
+	mnt_drop_write(path.mnt);
+exit1:
+	path_put(&path);
+	putname(name);
+	if (retry_estale(error, lookup_flags)) {
+		lookup_flags |= LOOKUP_REVAL;
+		goto retry;
+	}
+	return cloudabi_convert_errno(error);
+}
+
 cloudabi_errno_t cloudabi_sys_file_unlink(
     const struct cloudabi_sys_file_unlink_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	if ((uap->flag & CLOUDABI_UNLINK_REMOVEDIR) != 0)
+		return do_rmdir(uap, retval);
+	else
+		return do_unlink(uap, retval);
 }

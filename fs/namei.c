@@ -2426,6 +2426,20 @@ user_path_parent(int dfd, const char __user *path,
 				parent, last, type, rights);
 }
 
+struct filename *
+user_path_parent_fixed_length(int dfd, const char __user *path, size_t pathlen,
+			      struct path *parent,
+			      struct qstr *last,
+			      int *type,
+			      unsigned int flags,
+			      const struct capsicum_rights *rights)
+{
+	/* only LOOKUP_REVAL is allowed in extra flags */
+	return filename_parentat(dfd, getname_fixed_length(path, pathlen),
+	                         flags & LOOKUP_REVAL, parent, last, type,
+	                         rights);
+}
+
 /**
  * mountpoint_last - look up last component for umount
  * @nd:   pathwalk nameidata - currently pointing at parent directory of "last"
