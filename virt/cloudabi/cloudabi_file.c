@@ -129,7 +129,7 @@ cloudabi_errno_t cloudabi_sys_file_link(
 	int how = 0;
 	int error;
 
-	if (uap->fd1 & AT_SYMLINK_FOLLOW)
+	if (uap->fd1 & CLOUDABI_LOOKUP_SYMLINK_FOLLOW)
 		how |= LOOKUP_FOLLOW;
 	cap_rights_init(&rights, CAP_LINKAT_TARGET);
 retry:
