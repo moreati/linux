@@ -46,11 +46,10 @@ cloudabi_errno_t cloudabi_sys_fd_create1(
 
 	switch (uap->type) {
 	case CLOUDABI_FILETYPE_POLL:
-		fd = sys_epoll_create1(O_CLOEXEC);
+		fd = sys_epoll_create1(0);
 		break;
 	case CLOUDABI_FILETYPE_SHARED_MEMORY:
-		/* TODO(ed): Properly pass in a name. */
-		fd = sys_memfd_create(NULL, O_CLOEXEC);
+		fd = sys_memfd_create(NULL, 0);
 		break;
 	case CLOUDABI_FILETYPE_SOCKET_DGRAM:
 		fd = sys_socket(AF_UNIX, SOCK_DGRAM, 0);
