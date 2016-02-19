@@ -12,6 +12,7 @@
 #include <linux/fadvise.h>
 #include <linux/file.h>
 #include <linux/fs.h>
+#include <linux/fsnotify.h>
 #include <linux/mount.h>
 #include <linux/namei.h>
 #include <linux/path.h>
@@ -232,10 +233,128 @@ cloudabi_errno_t cloudabi_sys_file_open(
 	return 0;
 }
 
+struct readdir_data {
+	struct dir_context ctx;
+	char *buf;
+	size_t nbyte;
+	int error;
+};
+
+/*
+ * Writes a buffer of data that is returned by readdir() back to
+ * userspace. It truncates the data if it doesn't fit anymore. Upon
+ * failure, the remaining buffer size is set to zero, so that iteration
+ * on the directory stops.
+ */
+static void putdir(struct readdir_data *data, const void *buf, size_t len)
+{
+	if (len > data->nbyte)
+		len = data->nbyte;
+	if (copy_to_user(data->buf, buf, len) == 0) {
+		data->buf += len;
+		data->nbyte -= len;
+	} else {
+		data->nbyte = 0;
+		data->error = -EFAULT;
+	}
+}
+
+/*
+ * Writes a single directory entry to userspace.
+ */
+static int filldir(struct dir_context *ctx, const char *name, int namlen,
+                   loff_t offset, uint64_t ino, unsigned int d_type)
+{
+	struct readdir_data *data = container_of(ctx, struct readdir_data, ctx);
+	cloudabi_dirent_t de = {
+		.d_next = offset + 1, /* TODO(ed): Is this allowed? */
+		.d_ino = ino,
+		.d_namlen = namlen,
+	};
+
+	switch (d_type) {
+	case DT_FIFO:
+		de.d_type = CLOUDABI_FILETYPE_FIFO;
+		break;
+	case DT_CHR:
+		de.d_type = CLOUDABI_FILETYPE_CHARACTER_DEVICE;
+		break;
+	case DT_DIR:
+		de.d_type = CLOUDABI_FILETYPE_DIRECTORY;
+		break;
+	case DT_BLK:
+		de.d_type = CLOUDABI_FILETYPE_BLOCK_DEVICE;
+		break;
+	case DT_REG:
+		de.d_type = CLOUDABI_FILETYPE_REGULAR_FILE;
+		break;
+	case DT_LNK:
+		de.d_type = CLOUDABI_FILETYPE_SYMBOLIC_LINK;
+		break;
+	case DT_SOCK:
+		/* TODO(ed): Not correct. */
+		de.d_type = CLOUDABI_FILETYPE_SOCKET_STREAM;
+		break;
+	}
+
+	putdir(data, &de, sizeof(de));
+	putdir(data, name, namlen);
+	return data->nbyte == 0;
+}
+
 cloudabi_errno_t cloudabi_sys_file_readdir(
     const struct cloudabi_sys_file_readdir_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct readdir_data data = {
+		.ctx = {
+			.actor = filldir,
+			.pos = uap->cookie,
+		},
+		.buf = uap->buf,
+		.nbyte = uap->nbyte,
+		.error = 0,
+	};
+	struct fd f;
+	struct inode *inode;
+	int error;
+
+	/* Obtain directory inode. */
+	f = fdgetr(uap->fd, CAP_READ);
+	if (IS_ERR(f.file)) {
+		error = PTR_ERR(f.file);
+		goto out;
+	}
+	inode = file_inode(f.file);
+	if (f.file->f_op->iterate == NULL) {
+		error = -ENOTDIR;
+		goto put;
+	}
+
+	error = security_file_permission(f.file, MAY_READ);
+	if (error != 0)
+		goto put;
+
+	error = mutex_lock_killable(&inode->i_mutex);
+	if (error != 0)
+		goto put;
+	if (IS_DEADDIR(inode)) {
+		error = -ENOENT;
+		goto unlock;
+	}
+
+	/* Iterate on directory entries to write them to userspace. */
+	error = f.file->f_op->iterate(f.file, &data.ctx);
+	if (error == 0)
+		error = data.error;
+	retval[0] = data.buf - (const char *)uap->buf;
+	fsnotify_access(f.file);
+	file_accessed(f.file);
+unlock:
+	inode_unlock(inode);
+put:
+	fdput(f);
+out:
+	return cloudabi_convert_errno(error);
 }
 
 cloudabi_errno_t cloudabi_sys_file_readlink(
