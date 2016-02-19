@@ -33,6 +33,7 @@
 cloudabi_errno_t cloudabi64_sys_poll(
     const struct cloudabi64_sys_poll_args *uap, unsigned long *retval)
 {
+	enum hrtimer_mode mode;
 	struct timespec ts;
 	struct task_struct *task;
 	int error;
@@ -52,14 +53,15 @@ cloudabi_errno_t cloudabi64_sys_poll(
 		ev.type = sub.type;
 		if (sub.type == CLOUDABI_EVENTTYPE_CLOCK) {
 			/* Sleep. */
-			/* TODO(ed): This should not be here. */
+			mode = sub.clock.flags & CLOUDABI_SUBSCRIPTION_CLOCK_ABSTIME ?
+			    HRTIMER_MODE_ABS : HRTIMER_MODE_REL;
 			error = cloudabi_convert_clockid(sub.clock.clock_id,
 			    &clockid);
 			if (error == 0) {
 				ts.tv_sec = sub.clock.timeout / NSEC_PER_SEC;
 				ts.tv_nsec = sub.clock.timeout % NSEC_PER_SEC;
-				error = hrtimer_nanosleep(&ts, NULL,
-				    HRTIMER_MODE_ABS, clockid);
+				error = hrtimer_nanosleep(&ts, NULL, mode,
+				    clockid);
 			}
 			ev.error = cloudabi_convert_errno(error);
 			retval[0] = 1;
