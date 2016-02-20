@@ -235,10 +235,27 @@ cloudabi_errno_t cloudabi_sys_file_open(
 
 struct readdir_data {
 	struct dir_context ctx;
-	char *buf;
+	char __user *buf;
 	size_t nbyte;
+	char __user *previous_cookie;
 	int error;
 };
+
+/*
+ * Fills in the d_next field of a cloudabi_dirent_t that has already
+ * been copied to userspace.
+ */
+static void putdircookie(struct readdir_data *data, loff_t offset)
+{
+	cloudabi_dircookie_t cookie = offset;
+
+	if (data->previous_cookie != NULL &&
+	    copy_to_user(data->previous_cookie, &cookie, sizeof(cookie)) != 0) {
+		data->nbyte = 0;
+		data->error = -EFAULT;
+	}
+	data->previous_cookie = NULL;
+}
 
 /*
  * Writes a buffer of data that is returned by readdir() back to
@@ -246,7 +263,7 @@ struct readdir_data {
  * failure, the remaining buffer size is set to zero, so that iteration
  * on the directory stops.
  */
-static void putdir(struct readdir_data *data, const void *buf, size_t len)
+static void putdirbuf(struct readdir_data *data, const void *buf, size_t len)
 {
 	if (len > data->nbyte)
 		len = data->nbyte;
@@ -260,17 +277,29 @@ static void putdir(struct readdir_data *data, const void *buf, size_t len)
 }
 
 /*
- * Writes a single directory entry to userspace.
+ * Writes a single directory entry to userspace, leaving the d_next
+ * field empty. As this callback is invoked with the offset of the
+ * current entry and not the next entry, we have to fill in d_next
+ * during the next iteration.
  */
 static int filldir(struct dir_context *ctx, const char *name, int namlen,
                    loff_t offset, uint64_t ino, unsigned int d_type)
 {
 	struct readdir_data *data = container_of(ctx, struct readdir_data, ctx);
 	cloudabi_dirent_t de = {
-		.d_next = offset + 1, /* TODO(ed): Is this allowed? */
 		.d_ino = ino,
 		.d_namlen = namlen,
 	};
+
+	/*
+	 * Fill in the d_next field of the previous entry. Store the
+	 * offset of this entry's d_next field, so it can be filled in
+	 * during the next iteration.
+	 */
+	putdircookie(data, offset);
+	data->previous_cookie = data->nbyte >=
+	    offsetof(cloudabi_dirent_t, d_next) + sizeof(de.d_next) ?
+	    data->buf + offsetof(cloudabi_dirent_t, d_next) : NULL;
 
 	switch (d_type) {
 	case DT_FIFO:
@@ -297,8 +326,8 @@ static int filldir(struct dir_context *ctx, const char *name, int namlen,
 		break;
 	}
 
-	putdir(data, &de, sizeof(de));
-	putdir(data, name, namlen);
+	putdirbuf(data, &de, sizeof(de));
+	putdirbuf(data, name, namlen);
 	return data->nbyte == 0;
 }
 
@@ -312,6 +341,7 @@ cloudabi_errno_t cloudabi_sys_file_readdir(
 		},
 		.buf = uap->buf,
 		.nbyte = uap->nbyte,
+		.previous_cookie = NULL,
 		.error = 0,
 	};
 	struct fd f;
@@ -344,6 +374,7 @@ cloudabi_errno_t cloudabi_sys_file_readdir(
 
 	/* Iterate on directory entries to write them to userspace. */
 	error = f.file->f_op->iterate(f.file, &data.ctx);
+	putdircookie(&data, data.ctx.pos);
 	if (error == 0)
 		error = data.error;
 	retval[0] = data.buf - (const char *)uap->buf;
