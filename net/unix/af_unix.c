@@ -2543,8 +2543,12 @@ static int unix_shutdown(struct socket *sock, int mode)
 	++mode;
 
 	unix_state_lock(sk);
-	sk->sk_shutdown |= mode;
 	other = unix_peer(sk);
+	if (other == NULL) {
+		unix_state_unlock(sk);
+		return -ENOTCONN;
+	}
+	sk->sk_shutdown |= mode;
 	if (other)
 		sock_hold(other);
 	unix_state_unlock(sk);
