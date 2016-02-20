@@ -610,8 +610,11 @@ static int unix_listen(struct socket *sock, int backlog)
 	if (sock->type != SOCK_STREAM && sock->type != SOCK_SEQPACKET)
 		goto out;	/* Only stream/seqpacket sockets accept */
 	err = -EINVAL;
-	if (!u->addr)
+	if (!u->addr) {
+		if (unix_peer(sk) == NULL)
+			err = -EDESTADDRREQ;
 		goto out;	/* No listens on an unbound socket */
+	}
 	unix_state_lock(sk);
 	if (sk->sk_state != TCP_CLOSE && sk->sk_state != TCP_LISTEN)
 		goto out_unlock;
