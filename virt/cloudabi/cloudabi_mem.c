@@ -31,19 +31,26 @@
 #include "cloudabi_syscalls.h"
 #include "cloudabi_util.h"
 
-static unsigned long
-convert_mprot(cloudabi_mprot_t in)
+static cloudabi_errno_t
+convert_mprot(cloudabi_mprot_t in, int *out)
 {
-	unsigned long out;
+	/* Unknown protection flags. */
+	if ((in & ~(CLOUDABI_PROT_EXEC | CLOUDABI_PROT_WRITE |
+	    CLOUDABI_PROT_READ)) != 0)
+		return CLOUDABI_ENOTSUP;
+	/* W^X: Write and exec cannot be enabled at the same time. */
+	if ((in & (CLOUDABI_PROT_EXEC | CLOUDABI_PROT_WRITE)) ==
+	    (CLOUDABI_PROT_EXEC | CLOUDABI_PROT_WRITE))
+		return CLOUDABI_ENOTSUP;
 
-	out = 0;
+	*out = 0;
 	if (in & CLOUDABI_PROT_EXEC)
-		out |= PROT_EXEC;
+		*out |= PROT_EXEC;
 	if (in & CLOUDABI_PROT_WRITE)
-		out |= PROT_WRITE;
+		*out |= PROT_WRITE;
 	if (in & CLOUDABI_PROT_READ)
-		out |= PROT_READ;
-	return out;
+		*out |= PROT_READ;
+	return 0;
 }
 
 cloudabi_errno_t cloudabi_sys_mem_advise(
@@ -84,8 +91,10 @@ cloudabi_errno_t cloudabi_sys_mem_lock(
 cloudabi_errno_t cloudabi_sys_mem_map(
     const struct cloudabi_sys_mem_map_args *uap, unsigned long *retval)
 {
+	cloudabi_errno_t error;
 	unsigned long flags;
 	long addr;
+	int prot;
 
 	/* Address needs to be page aligned. */
 	if ((uap->off & ~PAGE_MASK) != 0)
@@ -105,8 +114,12 @@ cloudabi_errno_t cloudabi_sys_mem_map(
 	if (uap->flags & CLOUDABI_MAP_SHARED)
 		flags |= MAP_SHARED;
 
-	addr = sys_mmap_pgoff((unsigned long)uap->addr, uap->len,
-	    convert_mprot(uap->prot), flags, uap->fd, uap->off);
+	error = convert_mprot(uap->prot, &prot);
+	if (error != 0)
+		return error;
+
+	addr = sys_mmap_pgoff((unsigned long)uap->addr, uap->len, prot, flags,
+	    uap->fd, uap->off);
 	if (addr < 0 && addr >= -MAX_ERRNO)
 		return cloudabi_convert_errno(addr);
 	retval[0] = addr;
@@ -116,8 +129,15 @@ cloudabi_errno_t cloudabi_sys_mem_map(
 cloudabi_errno_t cloudabi_sys_mem_protect(
     const struct cloudabi_sys_mem_protect_args *uap, unsigned long *retval)
 {
+	cloudabi_errno_t error;
+	int prot;
+
+	error = convert_mprot(uap->prot, &prot);
+	if (error != 0)
+		return error;
+
 	return cloudabi_convert_errno(sys_mprotect((unsigned long)uap->addr,
-	    uap->len, convert_mprot(uap->prot)));
+	    uap->len, prot));
 }
 
 cloudabi_errno_t cloudabi_sys_mem_sync(
