@@ -75,7 +75,30 @@ out:
 cloudabi_errno_t cloudabi_sys_sock_connect(
     const struct cloudabi_sys_sock_connect_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct capsicum_rights rights;
+	struct fd f_sock;
+	struct path path;
+	struct socket *sock;
+	int err;
+
+	cap_rights_init(&rights, CAP_CONNECT);
+	f_sock = fdget_raw_rights(uap->s, &rights);
+	if (IS_ERR(f_sock.file))
+		return cloudabi_convert_errno(PTR_ERR(f_sock.file));
+
+	sock = sock_from_file(f_sock.file, &err);
+	if (sock == NULL)
+		goto out;
+
+	err = user_path_at_fixed_length(uap->fd, uap->path, uap->pathlen,
+	    0, &path, CAP_CONNECTAT);
+	if (err == 0) {
+		err = sock->ops->connectat(sock, &path, sock->file->f_flags);
+		path_put(&path);
+	}
+out:
+	fdput(f_sock);
+	return cloudabi_convert_errno(err);
 }
 
 cloudabi_errno_t cloudabi_sys_sock_listen(
