@@ -31,6 +31,8 @@
 #include <linux/syscalls.h>
 #include <linux/uio.h>
 
+#include <net/sock.h>
+
 #include "cloudabi_util.h"
 #include "cloudabi_syscalls.h"
 
@@ -220,6 +222,56 @@ cloudabi_errno_t cloudabi_sys_fd_seek(
 	return 0;
 }
 
+/* Extracts the CloudABI file descriptor type from st_mode. */
+cloudabi_filetype_t cloudabi_convert_filetype_simple(umode_t mode)
+{
+	if (S_ISBLK(mode))
+		return CLOUDABI_FILETYPE_BLOCK_DEVICE;
+	else if (S_ISCHR(mode))
+		return CLOUDABI_FILETYPE_CHARACTER_DEVICE;
+	else if (S_ISDIR(mode))
+		return CLOUDABI_FILETYPE_DIRECTORY;
+	else if (S_ISFIFO(mode))
+		return CLOUDABI_FILETYPE_FIFO;
+	else if (S_ISREG(mode))
+		return CLOUDABI_FILETYPE_REGULAR_FILE;
+	else if (S_ISSOCK(mode)) {
+		/* Inaccurate, but the best that we can do. */
+		return CLOUDABI_FILETYPE_SOCKET_STREAM;
+	} else if (S_ISLNK(mode))
+		return CLOUDABI_FILETYPE_SYMBOLIC_LINK;
+	else
+		return CLOUDABI_FILETYPE_UNKNOWN;
+}
+
+/* Converts a file descriptor to a CloudABI file descriptor type. */
+cloudabi_filetype_t cloudabi_convert_filetype(struct file *file)
+{
+	struct socket *sock;
+	int err;
+
+	/* TODO(ed): POLL, PROCESS and SHARED_MEMORY still missing. */
+
+	/* Determine socket type. */
+	sock = sock_from_file(file, &err);
+	if (sock != NULL) {
+		switch (sock->sk->sk_type) {
+		case SOCK_DGRAM:
+			return CLOUDABI_FILETYPE_SOCKET_DGRAM;
+		case SOCK_SEQPACKET:
+			return CLOUDABI_FILETYPE_SOCKET_SEQPACKET;
+		case SOCK_STREAM:
+			return CLOUDABI_FILETYPE_SOCKET_STREAM;
+		default:
+			return CLOUDABI_FILETYPE_UNKNOWN;
+		}
+	}
+
+	/* Fall back to testing the type stored in the inode mode bits. */
+	return cloudabi_convert_filetype_simple(
+	    file->f_path.dentry->d_inode->i_mode);
+}
+
 cloudabi_errno_t cloudabi_sys_fd_stat_get(
     const struct cloudabi_sys_fd_stat_get_args *uap, unsigned long *retval)
 {
@@ -232,8 +284,7 @@ cloudabi_errno_t cloudabi_sys_fd_stat_get(
 		return CLOUDABI_EBADF;
 	file = fd.file;
 
-	/* TODO(ed): Set the file type. */
-	fsb.fs_filetype = CLOUDABI_FILETYPE_DIRECTORY;
+	fsb.fs_filetype = cloudabi_convert_filetype(file);
 
 	/* Convert file descriptor flags. */
 	if ((file->f_flags & O_APPEND) != 0)

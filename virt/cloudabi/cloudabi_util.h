@@ -28,6 +28,7 @@
 
 #include "cloudabi_syscalldefs.h"
 
+struct file;
 struct task_struct;
 
 /* Limits. */
@@ -39,6 +40,12 @@ struct task_struct;
 #define cloudabi_gettid task_pid_vnr
 
 cloudabi_errno_t cloudabi_convert_errno(int);
+
+/* Extracts the CloudABI file descriptor type from st_mode. */
+cloudabi_filetype_t cloudabi_convert_filetype_simple(umode_t);
+
+/* Converts a file descriptor to a CloudABI file descriptor type. */
+cloudabi_filetype_t cloudabi_convert_filetype(struct file *);
 
 /* Fetches the time value of a clock. */
 int cloudabi_clock_time_get(cloudabi_clockid_t, cloudabi_timestamp_t *);

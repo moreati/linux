@@ -583,24 +583,6 @@ convert_stat(const struct kstat *sb, cloudabi_filestat_t *csb)
 		.st_ctim	= convert_timestamp(&sb->ctime),
 	};
 
-	/* TODO(ed): How can we derive the file type more accurately? */
-	if (S_ISBLK(sb->mode))
-		res.st_filetype = CLOUDABI_FILETYPE_BLOCK_DEVICE;
-	else if (S_ISCHR(sb->mode))
-		res.st_filetype = CLOUDABI_FILETYPE_CHARACTER_DEVICE;
-	else if (S_ISDIR(sb->mode))
-		res.st_filetype = CLOUDABI_FILETYPE_DIRECTORY;
-	else if (S_ISFIFO(sb->mode))
-		res.st_filetype = CLOUDABI_FILETYPE_FIFO;
-	else if (S_ISREG(sb->mode))
-		res.st_filetype = CLOUDABI_FILETYPE_REGULAR_FILE;
-	else if (S_ISSOCK(sb->mode)) {
-		/* Inaccurate, but the best that we can do. */
-		res.st_filetype = CLOUDABI_FILETYPE_SOCKET_STREAM;
-	} else if (S_ISLNK(sb->mode))
-		res.st_filetype = CLOUDABI_FILETYPE_SYMBOLIC_LINK;
-	else
-		res.st_filetype = CLOUDABI_FILETYPE_UNKNOWN;
 	*csb = res;
 }
 
@@ -634,18 +616,21 @@ cloudabi_errno_t cloudabi_sys_file_stat_fget(
 	struct fd fd;
 	struct kstat sb;
 	cloudabi_filestat_t csb;
+	cloudabi_filetype_t filetype;
 	int error;
 
 	fd = fdgetr_raw(uap->fd, CAP_FSTAT);
 	if (IS_ERR(fd.file))
 		return cloudabi_convert_errno(PTR_ERR(fd.file));
 	error = vfs_getattr(&fd.file->f_path, &sb);
+	filetype = cloudabi_convert_filetype(fd.file);
 	fdput(fd);
 	if (error != 0)
 		return cloudabi_convert_errno(error);
 
 	/* Convert results and return them. */
 	convert_stat(&sb, &csb);
+	csb.st_filetype = filetype;
 	return copy_to_user(uap->buf, &csb, sizeof(csb)) ? CLOUDABI_EFAULT : 0;
 }
 
@@ -708,6 +693,7 @@ retry:
 
 	/* Convert results and return them. */
 	convert_stat(&sb, &csb);
+	csb.st_filetype = cloudabi_convert_filetype_simple(sb.mode);
 	return copy_to_user(uap->buf, &csb, sizeof(csb)) ? CLOUDABI_EFAULT : 0;
 }
 
