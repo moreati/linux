@@ -68,6 +68,8 @@ static inline struct page *shmem_read_mapping_page(
 					mapping_gfp_mask(mapping));
 }
 
+extern bool is_file_shmem(struct file *file);
+
 #ifdef CONFIG_TMPFS
 
 extern int shmem_add_seals(struct file *file, unsigned int seals);

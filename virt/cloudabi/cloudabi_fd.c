@@ -24,9 +24,11 @@
  */
 
 #include <linux/audit.h>
+#include <linux/eventpoll.h>
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/net.h>
+#include <linux/shmem_fs.h>
 #include <linux/socket.h>
 #include <linux/syscalls.h>
 #include <linux/uio.h>
@@ -250,7 +252,12 @@ cloudabi_filetype_t cloudabi_convert_filetype(struct file *file)
 	struct socket *sock;
 	int err;
 
-	/* TODO(ed): POLL, PROCESS and SHARED_MEMORY still missing. */
+	/* Specialized file descriptor types. */
+	/* TODO(ed): PROCESS still missing. */
+	if (is_file_epoll(file))
+		return CLOUDABI_FILETYPE_POLL;
+	if (is_file_shmem(file))
+		return CLOUDABI_FILETYPE_SHARED_MEMORY;
 
 	/* Determine socket type. */
 	sock = sock_from_file(file, &err);

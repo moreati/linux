@@ -2047,6 +2047,11 @@ continue_resched:
 		     F_SEAL_GROW | \
 		     F_SEAL_WRITE)
 
+bool is_file_shmem(struct file *file)
+{
+	return file->f_op == &shmem_file_operations;
+}
+
 int shmem_add_seals(struct file *file, unsigned int seals)
 {
 	struct inode *inode = file_inode(file);
@@ -2083,7 +2088,7 @@ int shmem_add_seals(struct file *file, unsigned int seals)
 	 * other file types.
 	 */
 
-	if (file->f_op != &shmem_file_operations)
+	if (!is_file_shmem(file))
 		return -EINVAL;
 	if (!(file->f_mode & FMODE_WRITE))
 		return -EPERM;
