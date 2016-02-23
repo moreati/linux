@@ -62,10 +62,113 @@ static void cloudabi_convert_sockaddr(const struct sockaddr_storage *ss,
 	}
 }
 
+int create_sockstat(struct socket *sock, void __user *buf)
+{
+	cloudabi_sockstat_t ss = {};
+	struct sockaddr_storage address;
+	int len;
+
+	/* Fill ss_sockname and ss_peername. */
+	if (sock->ops->getname(sock, (struct sockaddr *)&address, &len, 0) == 0)
+		cloudabi_convert_sockaddr(&address, &ss.ss_sockname);
+	if (sock->ops->getname(sock, (struct sockaddr *)&address, &len, 1) == 0)
+		cloudabi_convert_sockaddr(&address, &ss.ss_peername);
+
+	/* Fill ss_error. */
+	ss.ss_error = cloudabi_convert_errno(sock_error(sock->sk));
+
+	/* Fill ss_state. */
+	if (sock->sk->sk_state == TCP_LISTEN)
+		ss.ss_state |= CLOUDABI_SOCKSTAT_ACCEPTCONN;
+	return copy_to_user(buf, &ss, sizeof(ss)) != 0 ? -EFAULT : 0;
+}
+
 cloudabi_errno_t cloudabi_sys_sock_accept(
     const struct cloudabi_sys_sock_accept_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct fd f;
+	struct socket *sock, *newsock;
+	struct file *newfile;
+	struct file *installfile;
+	int err, newfd;
+	struct capsicum_rights rights;
+	const struct capsicum_rights *listen_rights = NULL;
+	struct file *underlying;
+
+	f = fdget_raw(uap->s);
+	if (!f.file)
+		return CLOUDABI_EBADF;
+	underlying = file_unwrap(f.file,
+				 cap_rights_init(&rights, CAP_ACCEPT),
+				 &listen_rights, false);
+	if (IS_ERR(underlying)) {
+		err = PTR_ERR(underlying);
+		goto out_put;
+	}
+	sock = sock_from_file(underlying, &err);
+	if (!sock)
+		goto out_put;
+
+	err = -ENFILE;
+	newsock = sock_alloc();
+	if (!newsock)
+		goto out_put;
+
+	newsock->type = sock->type;
+	newsock->ops = sock->ops;
+
+	/*
+	 * We don't need try_module_get here, as the listening socket (sock)
+	 * has the protocol module (sock->ops->owner) held.
+	 */
+	__module_get(newsock->ops->owner);
+
+	newfd = get_unused_fd_flags(0);
+	if (unlikely(newfd < 0)) {
+		err = newfd;
+		sock_release(newsock);
+		goto out_put;
+	}
+	newfile = sock_alloc_file(newsock, 0, sock->sk->sk_prot_creator->name);
+	if (IS_ERR(newfile)) {
+		err = PTR_ERR(newfile);
+		put_unused_fd(newfd);
+		sock_release(newsock);
+		goto out_put;
+	}
+
+	err = security_socket_accept(sock, newsock);
+	if (err)
+		goto out_fd;
+
+	err = sock->ops->accept(sock, newsock, sock->file->f_flags);
+	if (err < 0)
+		goto out_fd;
+
+	if (uap->buf != NULL) {
+		err = create_sockstat(newsock, uap->buf);
+		if (err != 0)
+			goto out_fd;
+	}
+
+	/* File flags are not inherited via accept() unlike another OSes. */
+
+	/* However, any Capsicum capability rights are inherited. */
+	installfile = capsicum_file_install(listen_rights, newfile);
+	if (IS_ERR(installfile)) {
+		err = PTR_ERR(installfile);
+		goto out_fd;
+	}
+	fd_install(newfd, installfile);
+	retval[0] = newfd;
+
+out_put:
+	fdput(f);
+	return cloudabi_convert_errno(err);
+out_fd:
+	fput(newfile);
+	put_unused_fd(newfd);
+	goto out_put;
 }
 
 cloudabi_errno_t cloudabi_sys_sock_bind(
@@ -76,7 +179,7 @@ cloudabi_errno_t cloudabi_sys_sock_bind(
 	struct path path;
 	struct dentry *dentry;
 	struct socket *sock;
-	int err = 0;
+	int err;
 
 	cap_rights_init(&rights, CAP_BIND);
 	f_sock = fdget_raw_rights(uap->s, &rights);
@@ -109,7 +212,7 @@ cloudabi_errno_t cloudabi_sys_sock_connect(
 	struct fd f_sock;
 	struct path path;
 	struct socket *sock;
-	int err = 0;
+	int err;
 
 	cap_rights_init(&rights, CAP_CONNECT);
 	f_sock = fdget_raw_rights(uap->s, &rights);
@@ -160,12 +263,10 @@ cloudabi_errno_t cloudabi_sys_sock_shutdown(
 cloudabi_errno_t cloudabi_sys_sock_stat_get(
     const struct cloudabi_sys_sock_stat_get_args *uap, unsigned long *retval)
 {
-	cloudabi_sockstat_t ss = {};
 	struct capsicum_rights rights;
 	struct fd f_sock;
-	struct sockaddr_storage address;
 	struct socket *sock;
-	int err = 0, len;
+	int err;
 
 	cap_rights_init(&rights,
 	                CAP_GETSOCKOPT, CAP_GETPEERNAME, CAP_GETSOCKNAME);
@@ -173,26 +274,8 @@ cloudabi_errno_t cloudabi_sys_sock_stat_get(
 	if (IS_ERR(f_sock.file))
 		return cloudabi_convert_errno(PTR_ERR(f_sock.file));
 	sock = sock_from_file(f_sock.file, &err);
-	if (sock == NULL)
-		goto out;
-
-	/* Fill ss_sockname and ss_peername. */
-	if (sock->ops->getname(sock, (struct sockaddr *)&address, &len, 0) == 0)
-		cloudabi_convert_sockaddr(&address, &ss.ss_sockname);
-	if (sock->ops->getname(sock, (struct sockaddr *)&address, &len, 1) == 0)
-		cloudabi_convert_sockaddr(&address, &ss.ss_peername);
-
-	/* Fill ss_error. */
-	ss.ss_error = cloudabi_convert_errno(sock_error(sock->sk));
-
-	/* Fill ss_state. */
-	if (sock->sk->sk_state == TCP_LISTEN)
-		ss.ss_state |= CLOUDABI_SOCKSTAT_ACCEPTCONN;
-
-	if (copy_to_user(uap->buf, &ss, sizeof(ss)) != 0)
-		err = -EFAULT;
-
-out:
+	if (sock != NULL)
+		err = create_sockstat(sock, uap->buf);
 	fdput(f_sock);
 	return cloudabi_convert_errno(err);
 }
