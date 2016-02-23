@@ -23,6 +23,7 @@
  * SUCH DAMAGE.
  */
 
+#include <linux/namei.h>
 #include <linux/net.h>
 #include <linux/syscalls.h>
 
@@ -39,7 +40,36 @@ cloudabi_errno_t cloudabi_sys_sock_accept(
 cloudabi_errno_t cloudabi_sys_sock_bind(
     const struct cloudabi_sys_sock_bind_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct capsicum_rights rights;
+	struct fd f_sock;
+	struct path path;
+	struct dentry *dentry;
+	struct socket *sock;
+	int err;
+
+	cap_rights_init(&rights, CAP_BIND);
+	f_sock = fdget_raw_rights(uap->s, &rights);
+	if (IS_ERR(f_sock.file))
+		return cloudabi_convert_errno(PTR_ERR(f_sock.file));
+
+	sock = sock_from_file(f_sock.file, &err);
+	if (sock == NULL)
+		goto out;
+
+	cap_rights_init(&rights, CAP_BINDAT);
+	dentry = user_path_create_fixed_length(uap->fd, uap->path,
+	    uap->pathlen, &path, 0, &rights);
+	err = PTR_ERR(dentry);
+	if (IS_ERR(dentry)) {
+		if (err == -EEXIST)
+			err = -EADDRINUSE;
+	} else {
+		err = sock->ops->bindat(sock, &path, dentry);
+		done_path_create(&path, dentry);
+	}
+out:
+	fdput(f_sock);
+	return cloudabi_convert_errno(err);
 }
 
 cloudabi_errno_t cloudabi_sys_sock_connect(

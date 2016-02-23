@@ -635,6 +635,7 @@ out:
 
 static int unix_release(struct socket *);
 static int unix_bind(struct socket *, struct sockaddr *, int);
+static int unix_bindat(struct socket *, struct path *, struct dentry *);
 static int unix_stream_connect(struct socket *, struct sockaddr *,
 			       int addr_len, int flags);
 static int unix_socketpair(struct socket *, struct socket *);
@@ -679,6 +680,7 @@ static const struct proto_ops unix_stream_ops = {
 	.owner =	THIS_MODULE,
 	.release =	unix_release,
 	.bind =		unix_bind,
+	.bindat =	unix_bindat,
 	.connect =	unix_stream_connect,
 	.socketpair =	unix_socketpair,
 	.accept =	unix_accept,
@@ -702,6 +704,7 @@ static const struct proto_ops unix_dgram_ops = {
 	.owner =	THIS_MODULE,
 	.release =	unix_release,
 	.bind =		unix_bind,
+	.bindat =	unix_bindat,
 	.connect =	unix_dgram_connect,
 	.socketpair =	unix_socketpair,
 	.accept =	sock_no_accept,
@@ -724,6 +727,7 @@ static const struct proto_ops unix_seqpacket_ops = {
 	.owner =	THIS_MODULE,
 	.release =	unix_release,
 	.bind =		unix_bind,
+	.bindat =	unix_bindat,
 	.connect =	unix_stream_connect,
 	.socketpair =	unix_socketpair,
 	.accept =	unix_accept,
@@ -1080,6 +1084,59 @@ out_path:
 	if (dentry)
 		done_path_create(&path, dentry);
 
+out:
+	return err;
+}
+
+static int unix_bindat(struct socket *sock, struct path *path,
+                       struct dentry *dentry)
+{
+	struct sock *sk = sock->sk;
+	struct unix_sock *u = unix_sk(sk);
+	int err;
+	unsigned int hash;
+	struct unix_address *addr;
+	struct hlist_head *list;
+	struct path u_path;
+	umode_t mode;
+
+	err = mutex_lock_interruptible(&u->readlock);
+	if (err)
+		goto out;
+
+	err = -EINVAL;
+	if (u->addr)
+		goto out_up;
+
+	err = -ENOMEM;
+	addr = kzalloc(offsetof(struct unix_address, name[0].sun_path[1]),
+	    GFP_KERNEL);
+	if (!addr)
+		goto out_up;
+
+	addr->name[0].sun_family = AF_UNIX;
+	addr->len = offsetof(struct sockaddr_un, sun_path[1]);
+	atomic_set(&addr->refcnt, 1);
+
+	mode = S_IFSOCK | (SOCK_INODE(sock)->i_mode & ~current_umask());
+	err = unix_mknod(dentry, path, mode, &u_path);
+	if (err) {
+		if (err == -EEXIST)
+			err = -EADDRINUSE;
+		unix_release_addr(addr);
+		goto out_up;
+	}
+	addr->hash = UNIX_HASH_SIZE;
+	hash = d_backing_inode(dentry)->i_ino & (UNIX_HASH_SIZE - 1);
+	spin_lock(&unix_table_lock);
+	u->path = u_path;
+	list = &unix_socket_table[hash];
+	__unix_remove_socket(sk);
+	u->addr = addr;
+	__unix_insert_socket(list, sk);
+	spin_unlock(&unix_table_lock);
+out_up:
+	mutex_unlock(&u->readlock);
 out:
 	return err;
 }

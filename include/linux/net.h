@@ -124,11 +124,13 @@ struct socket {
 	const struct proto_ops	*ops;
 };
 
-struct vm_area_struct;
-struct page;
-struct sockaddr;
-struct msghdr;
+struct dentry;
 struct module;
+struct msghdr;
+struct page;
+struct path;
+struct sockaddr;
+struct vm_area_struct;
 
 struct proto_ops {
 	int		family;
@@ -137,6 +139,8 @@ struct proto_ops {
 	int		(*bind)	     (struct socket *sock,
 				      struct sockaddr *myaddr,
 				      int sockaddr_len);
+	int		(*bindat)    (struct socket *sock,
+				      struct path *, struct dentry *);
 	int		(*connect)   (struct socket *sock,
 				      struct sockaddr *vaddr,
 				      int sockaddr_len, int flags);
