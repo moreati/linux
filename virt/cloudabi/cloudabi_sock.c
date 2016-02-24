@@ -62,7 +62,8 @@ static void cloudabi_convert_sockaddr(const struct sockaddr_storage *ss,
 	}
 }
 
-int create_sockstat(struct socket *sock, void __user *buf)
+int create_sockstat(struct socket *sock, void __user *buf,
+                    cloudabi_ssflags_t flags)
 {
 	cloudabi_sockstat_t ss = {};
 	struct sockaddr_storage address;
@@ -75,7 +76,10 @@ int create_sockstat(struct socket *sock, void __user *buf)
 		cloudabi_convert_sockaddr(&address, &ss.ss_peername);
 
 	/* Fill ss_error. */
-	ss.ss_error = cloudabi_convert_errno(sock_error(sock->sk));
+	if ((flags & CLOUDABI_SOCKSTAT_CLEAR_ERROR) != 0)
+		ss.ss_error = cloudabi_convert_errno(sock_error(sock->sk));
+	else
+		ss.ss_error = cloudabi_convert_errno(sock->sk->sk_err);
 
 	/* Fill ss_state. */
 	if (sock->sk->sk_state == TCP_LISTEN)
@@ -146,7 +150,7 @@ cloudabi_errno_t cloudabi_sys_sock_accept(
 		goto out_fd;
 
 	if (uap->buf != NULL) {
-		err = create_sockstat(newsock, uap->buf);
+		err = create_sockstat(newsock, uap->buf, 0);
 		if (err != 0)
 			goto out_fd;
 	}
@@ -275,7 +279,7 @@ cloudabi_errno_t cloudabi_sys_sock_stat_get(
 		return cloudabi_convert_errno(PTR_ERR(f_sock.file));
 	sock = sock_from_file(f_sock.file, &err);
 	if (sock != NULL)
-		err = create_sockstat(sock, uap->buf);
+		err = create_sockstat(sock, uap->buf, uap->flags);
 	fdput(f_sock);
 	return cloudabi_convert_errno(err);
 }
