@@ -39,7 +39,55 @@
 cloudabi_errno_t cloudabi64_sys_sock_recv(
     const struct cloudabi64_sys_sock_recv_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct capsicum_rights rights;
+	struct fd f_sock;
+	struct msghdr msg = {};
+	cloudabi64_recv_in_t ri;
+	cloudabi64_recv_out_t ro = {};
+	struct iovec iovstack[UIO_FASTIOV];
+	struct iovec *iov = iovstack;
+	struct socket *sock;
+	int error;
+
+	if (copy_from_user(&ri, uap->in, sizeof(ri)) != 0)
+		return CLOUDABI_EFAULT;
+
+	/* Obtain socket. */
+	cap_rights_init(&rights, CAP_RECV);
+	f_sock = fdget_raw_rights(uap->s, &rights);
+	if (IS_ERR(f_sock.file))
+		return cloudabi_convert_errno(PTR_ERR(f_sock.file));
+	sock = sock_from_file(f_sock.file, &error);
+	if (sock == NULL)
+		goto out;
+
+	/* Process ri_data and ri_datalen. */
+	error = import_iovec(WRITE, (const struct iovec __user *)ri.ri_data,
+	                     ri.ri_datalen, ARRAY_SIZE(iovstack), &iov,
+	                     &msg.msg_iter);
+	if (error != 0)
+		goto out;
+
+	/* Convert ri_flags. */
+	if (ri.ri_flags & CLOUDABI_MSG_PEEK)
+		msg.msg_flags |= MSG_PEEK;
+	if (ri.ri_flags & CLOUDABI_MSG_WAITALL)
+		msg.msg_flags |= MSG_WAITALL;
+	if (sock->file->f_flags & O_NONBLOCK)
+		msg.msg_flags |= MSG_DONTWAIT;
+
+	/* Read message. Return length of read message. */
+	error = sock_recvmsg(sock, &msg, iov_iter_count(&msg.msg_iter),
+	                     msg.msg_flags);
+	if (error >= 0) {
+		ro.ro_datalen = error;
+		error = copy_to_user(uap->out, &ro, sizeof(ro)) != 0 ?
+		    -EFAULT : 0;
+	}
+	kfree(iov);
+out:
+	fdput(f_sock);
+	return cloudabi_convert_errno(error);
 }
 
 cloudabi_errno_t cloudabi64_sys_sock_send(
@@ -58,6 +106,7 @@ cloudabi_errno_t cloudabi64_sys_sock_send(
 	if (copy_from_user(&si, uap->in, sizeof(si)) != 0)
 		return CLOUDABI_EFAULT;
 
+	/* Obtain socket. */
 	cap_rights_init(&rights, CAP_SEND);
 	f_sock = fdget_raw_rights(uap->s, &rights);
 	if (IS_ERR(f_sock.file))
@@ -79,6 +128,8 @@ cloudabi_errno_t cloudabi64_sys_sock_send(
 	msg.msg_flags = MSG_NOSIGNAL;
 	if (si.si_flags & CLOUDABI_MSG_EOR)
 		msg.msg_flags |= MSG_EOR;
+	if (sock->file->f_flags & O_NONBLOCK)
+		msg.msg_flags |= MSG_DONTWAIT;
 
 	/* Write message. Return length of written message. */
 	error = sock_sendmsg(sock, &msg);
