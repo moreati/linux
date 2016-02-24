@@ -23,7 +23,17 @@
  * SUCH DAMAGE.
  */
 
+#include <linux/capsicum.h>
+#include <linux/file.h>
+#include <linux/fs.h>
+#include <linux/net.h>
+#include <linux/slab.h>
+#include <linux/socket.h>
+#include <linux/uaccess.h>
+#include <linux/uio.h>
+
 #include "cloudabi_syscalldefs.h"
+#include "cloudabi_util.h"
 #include "cloudabi64_syscalls.h"
 
 cloudabi_errno_t cloudabi64_sys_sock_recv(
@@ -35,5 +45,50 @@ cloudabi_errno_t cloudabi64_sys_sock_recv(
 cloudabi_errno_t cloudabi64_sys_sock_send(
     const struct cloudabi64_sys_sock_send_args *uap, unsigned long *retval)
 {
-	return CLOUDABI_ENOSYS;
+	struct capsicum_rights rights;
+	struct fd f_sock;
+	struct msghdr msg = {};
+	cloudabi64_send_in_t si;
+	cloudabi64_send_out_t so = {};
+	struct iovec iovstack[UIO_FASTIOV];
+	struct iovec *iov = iovstack;
+	struct socket *sock;
+	int error;
+
+	if (copy_from_user(&si, uap->in, sizeof(si)) != 0)
+		return CLOUDABI_EFAULT;
+
+	cap_rights_init(&rights, CAP_SEND);
+	f_sock = fdget_raw_rights(uap->s, &rights);
+	if (IS_ERR(f_sock.file))
+		return cloudabi_convert_errno(PTR_ERR(f_sock.file));
+	sock = sock_from_file(f_sock.file, &error);
+	if (sock == NULL)
+		goto out;
+
+	/* Process si_data and si_datalen. */
+	error = import_iovec(WRITE, (const struct iovec __user *)si.si_data,
+	                     si.si_datalen, ARRAY_SIZE(iovstack), &iov,
+	                     &msg.msg_iter);
+	if (error != 0)
+		goto out;
+
+	/* TODO(ed): Process si_fds and si_fdslen. */
+
+	/* Process si_flags. */
+	msg.msg_flags = MSG_NOSIGNAL;
+	if (si.si_flags & CLOUDABI_MSG_EOR)
+		msg.msg_flags |= MSG_EOR;
+
+	/* Write message. Return length of written message. */
+	error = sock_sendmsg(sock, &msg);
+	if (error >= 0) {
+		so.so_datalen = error;
+		error = copy_to_user(uap->out, &so, sizeof(so)) != 0 ?
+		    -EFAULT : 0;
+	}
+	kfree(iov);
+out:
+	fdput(f_sock);
+	return cloudabi_convert_errno(error);
 }
