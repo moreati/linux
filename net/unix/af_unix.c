@@ -2542,7 +2542,7 @@ static int unix_stream_read_generic(struct unix_stream_read_state *state)
 	size_t size = state->size;
 	unsigned int last_len;
 
-	err = -EINVAL;
+	err = -ENOTCONN;
 	if (sk->sk_state != TCP_ESTABLISHED)
 		goto out;
 
