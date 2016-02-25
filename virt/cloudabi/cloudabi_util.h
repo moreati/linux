@@ -34,9 +34,6 @@ struct task_struct;
 /* Limits. */
 #define UINT64_MAX (~(uint64_t)0)
 
-/* Assertions. */
-#define cloudabi_assert(expr, reason) BUG_ON(!(expr))
-
 #define cloudabi_gettid task_pid_vnr
 
 cloudabi_errno_t cloudabi_convert_errno(int);
@@ -60,11 +57,13 @@ int cloudabi_convert_clockid(cloudabi_clockid_t, clockid_t *);
  * sleep on a lock or condition variable.
  */
 int cloudabi_futex_condvar_wait(struct task_struct *, cloudabi_condvar_t *,
-    cloudabi_lock_t *, cloudabi_clockid_t, cloudabi_timestamp_t,
-    cloudabi_timestamp_t);
+    cloudabi_mflags_t, cloudabi_lock_t *, cloudabi_mflags_t, cloudabi_clockid_t,
+    cloudabi_timestamp_t, cloudabi_timestamp_t);
 int cloudabi_futex_lock_rdlock(struct task_struct *, cloudabi_lock_t *,
-    cloudabi_clockid_t, cloudabi_timestamp_t, cloudabi_timestamp_t);
+    cloudabi_mflags_t, cloudabi_clockid_t, cloudabi_timestamp_t,
+    cloudabi_timestamp_t);
 int cloudabi_futex_lock_wrlock(struct task_struct *, cloudabi_lock_t *,
-    cloudabi_clockid_t, cloudabi_timestamp_t, cloudabi_timestamp_t);
+    cloudabi_mflags_t, cloudabi_clockid_t, cloudabi_timestamp_t,
+    cloudabi_timestamp_t);
 
 #endif

@@ -72,7 +72,9 @@ cloudabi_errno_t cloudabi64_sys_poll(
 			ev.error = cloudabi_convert_errno(
 			    cloudabi_futex_condvar_wait(
 			        task, (cloudabi_condvar_t *)sub.condvar.condvar,
+			        sub.condvar.condvar_scope,
 			        (cloudabi_lock_t *)sub.condvar.lock,
+			        sub.condvar.lock_scope,
 			        CLOUDABI_CLOCK_MONOTONIC, UINT64_MAX, 0));
 			retval[0] = 1;
 			return copy_to_user(uap->out, &ev, sizeof(ev)) != 0 ?
@@ -82,7 +84,8 @@ cloudabi_errno_t cloudabi64_sys_poll(
 			ev.error = cloudabi_convert_errno(
 			    cloudabi_futex_lock_rdlock(
 			        task, (cloudabi_lock_t *)sub.lock.lock,
-			        CLOUDABI_CLOCK_MONOTONIC, UINT64_MAX, 0));
+			        sub.lock.lock_scope, CLOUDABI_CLOCK_MONOTONIC,
+			        UINT64_MAX, 0));
 			retval[0] = 1;
 			return copy_to_user(uap->out, &ev, sizeof(ev)) != 0 ?
 			    CLOUDABI_EFAULT : 0;
@@ -91,7 +94,8 @@ cloudabi_errno_t cloudabi64_sys_poll(
 			ev.error = cloudabi_convert_errno(
 			    cloudabi_futex_lock_wrlock(
 			        task, (cloudabi_lock_t *)sub.lock.lock,
-			        CLOUDABI_CLOCK_MONOTONIC, UINT64_MAX, 0));
+			        sub.lock.lock_scope, CLOUDABI_CLOCK_MONOTONIC,
+			        UINT64_MAX, 0));
 			retval[0] = 1;
 			return copy_to_user(uap->out, &ev, sizeof(ev)) != 0 ?
 			    CLOUDABI_EFAULT : 0;
@@ -111,7 +115,9 @@ cloudabi_errno_t cloudabi64_sys_poll(
 			/* Wait for a condition variable with timeout. */
 			error = cloudabi_futex_condvar_wait(
 			    task, (cloudabi_condvar_t *)sub[0].condvar.condvar,
+			    sub[0].condvar.condvar_scope,
 			    (cloudabi_lock_t *)sub[0].condvar.lock,
+			    sub[0].condvar.lock_scope,
 			    sub[1].clock.clock_id, sub[1].clock.timeout,
 			    sub[1].clock.precision);
 			if (error == -ETIMEDOUT) {
@@ -130,8 +136,8 @@ cloudabi_errno_t cloudabi64_sys_poll(
 			/* Acquire a read lock with a timeout. */
 			error = cloudabi_futex_lock_rdlock(
 			    task, (cloudabi_lock_t *)sub[0].lock.lock,
-			    sub[1].clock.clock_id, sub[1].clock.timeout,
-			    sub[1].clock.precision);
+			    sub[0].lock.lock_scope, sub[1].clock.clock_id,
+			    sub[1].clock.timeout, sub[1].clock.precision);
 			if (error == -ETIMEDOUT) {
 				ev[1].error = 0;
 				retval[0] = 1;
@@ -148,8 +154,8 @@ cloudabi_errno_t cloudabi64_sys_poll(
 			/* Acquire a write lock with a timeout. */
 			error = cloudabi_futex_lock_wrlock(
 			    task, (cloudabi_lock_t *)sub[0].lock.lock,
-			    sub[1].clock.clock_id, sub[1].clock.timeout,
-			    sub[1].clock.precision);
+			    sub[0].lock.lock_scope, sub[1].clock.clock_id,
+			    sub[1].clock.timeout, sub[1].clock.precision);
 			if (error == -ETIMEDOUT) {
 				ev[1].error = 0;
 				retval[0] = 1;
