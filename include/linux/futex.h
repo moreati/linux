@@ -50,6 +50,12 @@ union futex_key {
 	} both;
 };
 
+#define FLAGS_SHARED		0x01
+
+int get_futex_key(const u32 __user *, int, union futex_key *, int);
+void put_futex_key(union futex_key *);
+int match_futex(const union futex_key *, const union futex_key *);
+
 #define FUTEX_KEY_INIT (union futex_key) { .both = { .ptr = NULL } }
 
 #ifdef CONFIG_FUTEX

@@ -23,6 +23,7 @@
  * SUCH DAMAGE.
  */
 
+#include <linux/futex.h>
 #include <linux/list.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -118,10 +119,8 @@ struct futex_waiter;
     list_del((head)->next)
 
 /* Identifier of a location in memory. */
-/* TODO(ed): Make this work with shared mutexes. */
 struct futex_address {
-	struct mm_struct *		fa_mm;
-	const void *			fa_object;
+	union futex_key			fa_key;
 };
 
 /* A set of waiting threads. */
@@ -236,21 +235,28 @@ static int
 futex_address_create(struct futex_address *fa, struct task_struct *td,
     const void *object, cloudabi_mflags_t scope)
 {
-	fa->fa_mm = td->mm;
-	fa->fa_object = object;
-	return (0);
+	switch (scope) {
+	case CLOUDABI_MAP_PRIVATE:
+		return get_futex_key(object, 0, &fa->fa_key, VERIFY_WRITE);
+	case CLOUDABI_MAP_SHARED:
+		return get_futex_key(object, FLAGS_SHARED, &fa->fa_key,
+		                     VERIFY_WRITE);
+	default:
+		return -EINVAL;
+	}
 }
 
 static void
 futex_address_free(struct futex_address *fa)
 {
+	put_futex_key(&fa->fa_key);
 }
 
 static bool
 futex_address_match(const struct futex_address *fa1,
     const struct futex_address *fa2)
 {
-	return (fa1->fa_mm == fa2->fa_mm && fa1->fa_object == fa2->fa_object);
+	return match_futex(&fa1->fa_key, &fa2->fa_key);
 }
 
 /*

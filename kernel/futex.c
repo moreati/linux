@@ -179,7 +179,6 @@ int __read_mostly futex_cmpxchg_enabled;
  * Futex flags used to encode options to functions and preserve them across
  * restarts.
  */
-#define FLAGS_SHARED		0x01
 #define FLAGS_CLOCKRT		0x02
 #define FLAGS_HAS_TIMEOUT	0x04
 
@@ -387,7 +386,7 @@ static struct futex_hash_bucket *hash_futex(union futex_key *key)
 /*
  * Return 1 if two futex_keys are equal, 0 otherwise.
  */
-static inline int match_futex(union futex_key *key1, union futex_key *key2)
+int match_futex(const union futex_key *key1, const union futex_key *key2)
 {
 	return (key1 && key2
 		&& key1->both.word == key2->both.word
@@ -464,8 +463,9 @@ static void drop_futex_key_refs(union futex_key *key)
  *
  * lock_page() might sleep, the caller should not hold a spinlock.
  */
-static int
-get_futex_key(u32 __user *uaddr, int fshared, union futex_key *key, int rw)
+int
+get_futex_key(const u32 __user *uaddr, int fshared, union futex_key *key,
+              int rw)
 {
 	unsigned long address = (unsigned long)uaddr;
 	struct mm_struct *mm = current->mm;
@@ -580,7 +580,7 @@ out:
 	return err;
 }
 
-static inline void put_futex_key(union futex_key *key)
+void put_futex_key(union futex_key *key)
 {
 	drop_futex_key_refs(key);
 }
