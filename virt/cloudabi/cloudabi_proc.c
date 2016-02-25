@@ -313,9 +313,8 @@ cloudabi_errno_t cloudabi_sys_proc_exit(
 cloudabi_errno_t cloudabi_sys_proc_fork(
     const void *uap, unsigned long *retval)
 {
-#if 0
 	struct clone4_args clone4_args = {};
-	struct clonefd_setup clonefd_setup;
+	struct clonefd_setup clonefd_setup = {};
 	struct pt_regs *regs;
 	struct task_struct *child;
 	cloudabi_tid_t tid;
@@ -329,7 +328,6 @@ cloudabi_errno_t cloudabi_sys_proc_fork(
 	/* Return the new thread ID to the child process. */
 	regs = task_pt_regs(child);
 #ifdef __x86_64__
-	/* TODO(ed): This should be solved more elegantly. */
 	regs->di = CLOUDABI_PROCESS_CHILD;
 	regs->si = tid;
 #else
@@ -343,8 +341,6 @@ cloudabi_errno_t cloudabi_sys_proc_fork(
 	/* Return the new file descriptor to the parent process. */
 	retval[0] = clonefd_setup.fd;
 	return 0;
-#endif
-	return CLOUDABI_ENOSYS;
 }
 
 cloudabi_errno_t cloudabi_sys_proc_raise(
