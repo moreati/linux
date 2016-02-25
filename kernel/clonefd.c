@@ -166,6 +166,32 @@ static const struct file_operations clonefd_fops = {
 	.show_fdinfo = clonefd_show_fdinfo,
 };
 
+int clonefd_wait(int fd, bool wnohang, int *exit_code) {
+	struct file *file;
+	struct clonefd_data *data;
+	struct task_struct *p;
+	int error;
+
+	file = fgetr(fd, CAP_PDWAIT);
+	if (IS_ERR(file))
+		return PTR_ERR(file);
+	if (file->f_op != &clonefd_fops) {
+		error = -EINVAL;
+		goto out;
+	}
+
+	data = file->private_data;
+	p = data->task;
+	if (wnohang)
+		error = -EAGAIN;
+	else
+		error = wait_event_interruptible(p->clonefd_wqh, p->exit_state);
+	*exit_code = p->exit_code;
+out:
+	fput(file);
+	return error;
+}
+
 /* Do process exit notification for clonefd. */
 void clonefd_do_notify(struct task_struct *p)
 {

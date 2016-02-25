@@ -2663,6 +2663,7 @@ struct clonefd_setup {
 	struct file *file;
 };
 void clonefd_install_fd(struct clone4_args *args, struct clonefd_setup *setup);
+int clonefd_wait(int fd, bool wnohang, int *exit_code);
 #else
 struct clonefd_setup {};
 static inline void clonefd_install_fd(struct clone4_args *args,

@@ -30,6 +30,62 @@
 #include "cloudabi_util.h"
 #include "cloudabi64_syscalls.h"
 
+static cloudabi_signal_t
+convert_signal(int sig)
+{
+	static const cloudabi_signal_t signals[] = {
+		[SIGABRT]	= CLOUDABI_SIGABRT,
+		[SIGALRM]	= CLOUDABI_SIGALRM,
+		[SIGBUS]	= CLOUDABI_SIGBUS,
+		[SIGCHLD]	= CLOUDABI_SIGCHLD,
+		[SIGCONT]	= CLOUDABI_SIGCONT,
+		[SIGFPE]	= CLOUDABI_SIGFPE,
+		[SIGHUP]	= CLOUDABI_SIGHUP,
+		[SIGILL]	= CLOUDABI_SIGILL,
+		[SIGINT]	= CLOUDABI_SIGINT,
+		[SIGKILL]	= CLOUDABI_SIGKILL,
+		[SIGPIPE]	= CLOUDABI_SIGPIPE,
+		[SIGQUIT]	= CLOUDABI_SIGQUIT,
+		[SIGSEGV]	= CLOUDABI_SIGSEGV,
+		[SIGSTOP]	= CLOUDABI_SIGSTOP,
+		[SIGSYS]	= CLOUDABI_SIGSYS,
+		[SIGTERM]	= CLOUDABI_SIGTERM,
+		[SIGTRAP]	= CLOUDABI_SIGTRAP,
+		[SIGTSTP]	= CLOUDABI_SIGTSTP,
+		[SIGTTIN]	= CLOUDABI_SIGTTIN,
+		[SIGTTOU]	= CLOUDABI_SIGTTOU,
+		[SIGURG]	= CLOUDABI_SIGURG,
+		[SIGUSR1]	= CLOUDABI_SIGUSR1,
+		[SIGUSR2]	= CLOUDABI_SIGUSR2,
+		[SIGVTALRM]	= CLOUDABI_SIGVTALRM,
+		[SIGXCPU]	= CLOUDABI_SIGXCPU,
+		[SIGXFSZ]	= CLOUDABI_SIGXFSZ,
+	};
+
+	/* Convert unknown signals to SIGABRT. */
+	if (sig < 0 || sig >= ARRAY_SIZE(signals) || signals[sig] == 0)
+		return (SIGABRT);
+	return (signals[sig]);
+}
+
+static bool do_pdwait(const cloudabi64_subscription_t *sub,
+                      cloudabi64_event_t *ev, bool wnohang) {
+	int error, exit_code;
+	int32_t code, status;
+
+	error = clonefd_wait(sub->proc_terminate.fd, wnohang, &exit_code);
+	ev->proc_terminate.fd = sub->proc_terminate.fd;
+	ev->error = cloudabi_convert_errno(error);
+	if (error == 0) {
+		task_exit_code_status(exit_code, &code, &status);
+		if (code == CLD_EXITED)
+			ev->proc_terminate.exitcode = status;
+		else
+			ev->proc_terminate.signal = convert_signal(status);
+	}
+	return error != -EAGAIN;
+}
+
 cloudabi_errno_t cloudabi64_sys_poll(
     const struct cloudabi64_sys_poll_args *uap, unsigned long *retval)
 {
@@ -96,6 +152,12 @@ cloudabi_errno_t cloudabi64_sys_poll(
 			        task, (cloudabi_lock_t *)sub.lock.lock,
 			        sub.lock.lock_scope, CLOUDABI_CLOCK_MONOTONIC,
 			        UINT64_MAX, 0));
+			retval[0] = 1;
+			return copy_to_user(uap->out, &ev, sizeof(ev)) != 0 ?
+			    CLOUDABI_EFAULT : 0;
+		} else if (sub.type == CLOUDABI_EVENTTYPE_PROC_TERMINATE) {
+			/* Wait for process termination. */
+			do_pdwait(&sub, &ev, false);
 			retval[0] = 1;
 			return copy_to_user(uap->out, &ev, sizeof(ev)) != 0 ?
 			    CLOUDABI_EFAULT : 0;
@@ -167,6 +229,20 @@ cloudabi_errno_t cloudabi64_sys_poll(
 			retval[0] = 1;
 			return copy_to_user(uap->out, &ev[0],
 			    sizeof(ev[0])) != 0 ? CLOUDABI_EFAULT : 0;
+		} else if (sub[0].type == CLOUDABI_EVENTTYPE_PROC_TERMINATE &&
+		    sub[1].type == CLOUDABI_EVENTTYPE_CLOCK &&
+		    sub[1].clock.timeout == 0) {
+			/* Wait for process termination. */
+			if (!do_pdwait(&sub[0], &ev[0], true)) {
+				ev[1].error = 0;
+				retval[0] = 1;
+				return copy_to_user(uap->out, &ev[1],
+				    sizeof(ev[1])) != 0 ? CLOUDABI_EFAULT : 0;
+			}
+
+			retval[0] = 1;
+			return copy_to_user(uap->out, &ev, sizeof(ev)) != 0 ?
+			    CLOUDABI_EFAULT : 0;
 		}
 	}
 
