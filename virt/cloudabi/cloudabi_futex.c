@@ -26,8 +26,8 @@
 #include <linux/futex.h>
 #include <linux/list.h>
 #include <linux/sched.h>
+#include <linux/semaphore.h>
 #include <linux/slab.h>
-#include <linux/spinlock.h>
 #include <linux/wait.h>
 
 #include <asm/futex.h>
@@ -82,7 +82,6 @@
  * TODO(ed): Add actual priority inheritance.
  * TODO(ed): Let futex_queue also take priorities into account.
  * TODO(ed): Make locking fine-grained.
- * TODO(ed): Don't use GFP_ATOMIC.
  */
 
 struct futex_address;
@@ -194,7 +193,7 @@ struct futex_waiter {
 };
 
 /* Global data structures. */
-static spinlock_t futex_global_lock;
+static DEFINE_SEMAPHORE(futex_global_lock);
 
 static LIST_HEAD(, futex_lock) futex_lock_list =
     LIST_HEAD_INITIALIZER(&futex_lock_list);
@@ -285,7 +284,7 @@ futex_condvar_lookup(struct task_struct *td, const cloudabi_condvar_t *address,
 	if (error != 0)
 		return (error);
 
-	spin_lock(&futex_global_lock);
+	down(&futex_global_lock);
 	LIST_FOREACH(fc, &futex_condvar_list, fc_next) {
 		if (futex_address_match(&fc->fc_address, &fa_condvar)) {
 			/* Found matching lock object. */
@@ -295,7 +294,7 @@ futex_condvar_lookup(struct task_struct *td, const cloudabi_condvar_t *address,
 			return (0);
 		}
 	}
-	spin_unlock(&futex_global_lock);
+	up(&futex_global_lock);
 	futex_address_free(&fa_condvar);
 	return (-ENOENT);
 }
@@ -320,7 +319,7 @@ futex_condvar_lookup_or_create(struct task_struct *td,
 		return (error);
 	}
 
-	spin_lock(&futex_global_lock);
+	down(&futex_global_lock);
 	LIST_FOREACH(fc, &futex_condvar_list, fc_next) {
 		if (!futex_address_match(&fc->fc_address, &fa_condvar))
 			continue;
@@ -329,7 +328,7 @@ futex_condvar_lookup_or_create(struct task_struct *td,
 			/* Condition variable is owned by a different lock. */
 			futex_address_free(&fa_condvar);
 			futex_address_free(&fa_lock);
-			spin_unlock(&futex_global_lock);
+			up(&futex_global_lock);
 			return (-EINVAL);
 		}
 
@@ -342,7 +341,7 @@ futex_condvar_lookup_or_create(struct task_struct *td,
 	}
 
 	/* None found. Create new condition variable object. */
-	fc = kmalloc(sizeof(*fc), GFP_ATOMIC);
+	fc = kmalloc(sizeof(*fc), GFP_KERNEL);
 	fc->fc_address = fa_condvar;
 	fc->fc_lock = futex_lock_lookup_locked(&fa_lock);
 	futex_queue_init(&fc->fc_waiters);
@@ -410,7 +409,7 @@ futex_lock_lookup(struct task_struct *td, const cloudabi_lock_t *address,
 	if (error != 0)
 		return (error);
 
-	spin_lock(&futex_global_lock);
+	down(&futex_global_lock);
 	*flret = futex_lock_lookup_locked(&fa);
 	return (0);
 }
@@ -430,7 +429,7 @@ futex_lock_lookup_locked(struct futex_address *fa)
 	}
 
 	/* None found. Create new lock object. */
-	fl = kmalloc(sizeof(*fl), GFP_ATOMIC);
+	fl = kmalloc(sizeof(*fl), GFP_KERNEL);
 	fl->fl_address = *fa;
 	fl->fl_owner = LOCK_UNMANAGED;
 	futex_queue_init(&fl->fl_readers);
@@ -478,7 +477,7 @@ futex_lock_release(struct futex_lock *fl)
 		LIST_REMOVE(fl, fl_next);
 		kfree(fl);
 	}
-	spin_unlock(&futex_global_lock);
+	up(&futex_global_lock);
 }
 
 static int
@@ -795,9 +794,9 @@ futex_queue_wait(wait_queue_head_t *q)
 	DEFINE_WAIT(wait);
 
 	prepare_to_wait(q, &wait, TASK_INTERRUPTIBLE);
-	spin_unlock(&futex_global_lock);
+	up(&futex_global_lock);
 	schedule();
-	spin_lock(&futex_global_lock);
+	down(&futex_global_lock);
 	finish_wait(q, &wait);
 	if (signal_pending(current))
 		return (-ERESTARTSYS);
@@ -811,9 +810,9 @@ futex_queue_timedwait(wait_queue_head_t *q, unsigned long jiffies)
 	long ret;
 
 	prepare_to_wait(q, &wait, TASK_INTERRUPTIBLE);
-	spin_unlock(&futex_global_lock);
+	up(&futex_global_lock);
 	ret = schedule_timeout(jiffies);
-	spin_lock(&futex_global_lock);
+	down(&futex_global_lock);
 	finish_wait(q, &wait);
 	if (signal_pending(current))
 		return (-ERESTARTSYS);
@@ -977,10 +976,8 @@ futex_user_load(uint32_t __user *obj, uint32_t *val)
 {
 	int error;
 
-	pagefault_disable();
 	error = __copy_from_user_inatomic(val, obj, sizeof(*obj));
-	pagefault_enable();
-	return (error != 0 ? -EFAULT : 0);
+	return error != 0 ? -EFAULT : 0;
 }
 
 static int
@@ -988,22 +985,15 @@ futex_user_store(uint32_t __user *obj, uint32_t val)
 {
 	int error;
 
-	pagefault_disable();
 	error = __copy_to_user_inatomic(obj, &val, sizeof(*obj));
-	pagefault_enable();
-	return (error != 0 ? -EFAULT : 0);
+	return error != 0 ? -EFAULT : 0;
 }
 
 static int
 futex_user_cmpxchg(uint32_t __user *obj, uint32_t cmp, uint32_t *old,
     uint32_t new)
 {
-	int error;
-
-	pagefault_disable();
-	error = futex_atomic_cmpxchg_inatomic(old, obj, cmp, new);
-	pagefault_enable();
-	return (error);
+	return futex_atomic_cmpxchg_inatomic(old, obj, cmp, new);
 }
 
 /*
