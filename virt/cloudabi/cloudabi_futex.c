@@ -854,7 +854,7 @@ futex_queue_sleep(struct futex_queue *fq, struct futex_lock *fl,
 		if (error != 0)
 			break;
 		if (now >= timeout) {
-			error = -EAGAIN;
+			error = -ETIMEDOUT;
 			break;
 		}
 
