@@ -25,6 +25,7 @@
 
 #include <linux/audit.h>
 #include <linux/eventpoll.h>
+#include <linux/fdtable.h>
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/net.h>
@@ -188,13 +189,23 @@ cloudabi_errno_t cloudabi_sys_fd_dup(
 cloudabi_errno_t cloudabi_sys_fd_replace(
     const struct cloudabi_sys_fd_replace_args *uap, unsigned long *retval)
 {
-	long newfd;
+	struct files_struct *files = current->files;
+	struct file *file;
+	int err = -EBADF;
 
-	/* TODO(ed): This should disallow dupping to unused descriptors. */
-	newfd = sys_dup2(uap->from, uap->to);
-	if (newfd < 0)
-		return cloudabi_convert_errno(newfd);
-	return 0;
+	if (uap->to == uap->from) {
+		rcu_read_lock();
+		if (fcheck_files(files, uap->from))
+			err = 0;
+		rcu_read_unlock();
+	} else {
+		spin_lock(&files->file_lock);
+		if (uap->to < files->fdtab.max_fds &&
+		    (file = fcheck(uap->from)) != NULL)
+			err = do_dup2(files, file, uap->to, 0);
+		spin_unlock(&files->file_lock);
+	}
+	return err >= 0 ? 0 : cloudabi_convert_errno(err);
 }
 
 cloudabi_errno_t cloudabi_sys_fd_seek(

@@ -1042,7 +1042,7 @@ bool get_close_on_exec(unsigned int fd)
 	return res;
 }
 
-static int do_dup2(struct files_struct *files,
+int do_dup2(struct files_struct *files,
 	struct file *file, unsigned fd, unsigned flags)
 __releases(&files->file_lock)
 {
@@ -1065,8 +1065,16 @@ __releases(&files->file_lock)
 	 */
 	fdt = files_fdtable(files);
 	tofree = fdt->fd[fd];
-	if (!tofree && fd_is_open(fd, fdt))
-		goto Ebusy;
+	if (tofree == NULL) {
+		if (!(flags & O_CREAT)) {
+			spin_unlock(&files->file_lock);
+			return -EBADF;
+		}
+		if (fd_is_open(fd, fdt)) {
+			spin_unlock(&files->file_lock);
+			return -EBUSY;
+		}
+	}
 	get_file(file);
 	rcu_assign_pointer(fdt->fd[fd], file);
 	__set_open_fd(fd, fdt);
@@ -1080,10 +1088,6 @@ __releases(&files->file_lock)
 		filp_close(tofree, files);
 
 	return fd;
-
-Ebusy:
-	spin_unlock(&files->file_lock);
-	return -EBUSY;
 }
 
 int replace_fd(unsigned fd, struct file *file, unsigned flags)
@@ -1101,7 +1105,7 @@ int replace_fd(unsigned fd, struct file *file, unsigned flags)
 	err = expand_files(files, fd);
 	if (unlikely(err < 0))
 		goto out_unlock;
-	return do_dup2(files, file, fd, flags);
+	return do_dup2(files, file, fd, flags | O_CREAT);
 
 out_unlock:
 	spin_unlock(&files->file_lock);
@@ -1133,7 +1137,7 @@ SYSCALL_DEFINE3(dup3, unsigned int, oldfd, unsigned int, newfd, int, flags)
 			goto Ebadf;
 		goto out_unlock;
 	}
-	return do_dup2(files, file, newfd, flags);
+	return do_dup2(files, file, newfd, flags | O_CREAT);
 
 Ebadf:
 	err = -EBADF;
