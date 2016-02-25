@@ -38,6 +38,7 @@ cloudabi_errno_t cloudabi_sys_thread_exit(
 {
 	struct cloudabi_sys_lock_unlock_args cloudabi_sys_lock_unlock_args = {
 		.lock = uap->lock,
+		.scope = uap->scope,
 	};
 
         /* Wake up joining thread. */

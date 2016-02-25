@@ -275,6 +275,7 @@ struct cloudabi_sys_sock_stat_get_args {
 };
 struct cloudabi_sys_thread_exit_args {
 	ARG(cloudabi_lock_t __user *, lock);
+	ARG(cloudabi_mflags_t, scope);
 };
 struct cloudabi_sys_thread_tcb_set_args {
 	ARG(void __user *, tcb);
