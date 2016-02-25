@@ -328,8 +328,8 @@ cloudabi_errno_t cloudabi_sys_proc_fork(
 	/* Return the new thread ID to the child process. */
 	regs = task_pt_regs(child);
 #ifdef __x86_64__
-	regs->di = CLOUDABI_PROCESS_CHILD;
-	regs->si = tid;
+	regs->ax = CLOUDABI_PROCESS_CHILD;
+	regs->dx = tid;
 #else
 #error "Unknown architecture"
 #endif
