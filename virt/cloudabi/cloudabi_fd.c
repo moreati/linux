@@ -538,10 +538,12 @@ cloudabi_errno_t cloudabi_sys_fd_stat_get(
 		return CLOUDABI_EBADF;
 	file = fd.file;
 
+	/* Obtain file descriptor capabilities. */
 	cap_rights_init(&rights);
 	file = capsicum_file_lookup(file, &rights, &actual_rights);
 	rights = *actual_rights;
 
+	/* Determine file descriptor type. */
 	fsb.fs_filetype = cloudabi_convert_filetype(file);
 
 	/* Convert file descriptor flags. */
@@ -553,7 +555,6 @@ cloudabi_errno_t cloudabi_sys_fd_stat_get(
 		fsb.fs_flags |= CLOUDABI_FDFLAG_NONBLOCK;
 	if ((file->f_flags & O_SYNC) != 0)
 		fsb.fs_flags |= CLOUDABI_FDFLAG_SYNC;
-
 	fdput(fd);
 
 	/* Convert capabilities to CloudABI rights. */
