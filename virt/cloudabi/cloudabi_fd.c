@@ -39,6 +39,51 @@
 #include "cloudabi_util.h"
 #include "cloudabi_syscalls.h"
 
+/* Translation between CloudABI and Capsicum rights. */
+#define RIGHTS_MAPPINGS \
+	MAPPING(CLOUDABI_RIGHT_FD_DATASYNC, CAP_FSYNC)			\
+	MAPPING(CLOUDABI_RIGHT_FD_READ, CAP_READ)			\
+	MAPPING(CLOUDABI_RIGHT_FD_SEEK, CAP_SEEK)			\
+	MAPPING(CLOUDABI_RIGHT_FD_STAT_PUT_FLAGS, CAP_FCNTL)		\
+	MAPPING(CLOUDABI_RIGHT_FD_SYNC, CAP_FSYNC)			\
+	MAPPING(CLOUDABI_RIGHT_FD_TELL, CAP_SEEK_TELL)			\
+	MAPPING(CLOUDABI_RIGHT_FD_WRITE, CAP_WRITE)			\
+	MAPPING(CLOUDABI_RIGHT_FILE_ADVISE)				\
+	MAPPING(CLOUDABI_RIGHT_FILE_ALLOCATE, CAP_WRITE)		\
+	MAPPING(CLOUDABI_RIGHT_FILE_CREATE_DIRECTORY, CAP_MKDIRAT)	\
+	MAPPING(CLOUDABI_RIGHT_FILE_CREATE_FILE, CAP_CREATE)		\
+	MAPPING(CLOUDABI_RIGHT_FILE_CREATE_FIFO, CAP_MKFIFOAT)		\
+	MAPPING(CLOUDABI_RIGHT_FILE_LINK_SOURCE, CAP_LINKAT_SOURCE)	\
+	MAPPING(CLOUDABI_RIGHT_FILE_LINK_TARGET, CAP_LINKAT_TARGET)	\
+	MAPPING(CLOUDABI_RIGHT_FILE_OPEN, CAP_LOOKUP)			\
+	MAPPING(CLOUDABI_RIGHT_FILE_READDIR, CAP_READ)			\
+	MAPPING(CLOUDABI_RIGHT_FILE_READLINK, CAP_LOOKUP)		\
+	MAPPING(CLOUDABI_RIGHT_FILE_RENAME_SOURCE, CAP_RENAMEAT_SOURCE)	\
+	MAPPING(CLOUDABI_RIGHT_FILE_RENAME_TARGET, CAP_RENAMEAT_TARGET)	\
+	MAPPING(CLOUDABI_RIGHT_FILE_STAT_FGET, CAP_FSTAT)		\
+	MAPPING(CLOUDABI_RIGHT_FILE_STAT_FPUT_SIZE, CAP_FTRUNCATE)	\
+	MAPPING(CLOUDABI_RIGHT_FILE_STAT_FPUT_TIMES, CAP_FUTIMES)	\
+	MAPPING(CLOUDABI_RIGHT_FILE_STAT_GET, CAP_FSTATAT)		\
+	MAPPING(CLOUDABI_RIGHT_FILE_STAT_PUT_TIMES, CAP_FUTIMESAT)	\
+	MAPPING(CLOUDABI_RIGHT_FILE_SYMLINK, CAP_SYMLINKAT)		\
+	MAPPING(CLOUDABI_RIGHT_FILE_UNLINK, CAP_UNLINKAT)		\
+	MAPPING(CLOUDABI_RIGHT_MEM_MAP, CAP_MMAP)			\
+	MAPPING(CLOUDABI_RIGHT_MEM_MAP_EXEC, CAP_MMAP_X)		\
+	MAPPING(CLOUDABI_RIGHT_POLL_FD_READWRITE, CAP_EVENT)		\
+	MAPPING(CLOUDABI_RIGHT_POLL_MODIFY, CAP_KQUEUE_CHANGE)		\
+	MAPPING(CLOUDABI_RIGHT_POLL_PROC_TERMINATE, CAP_EVENT)		\
+	MAPPING(CLOUDABI_RIGHT_POLL_WAIT, CAP_KQUEUE_EVENT)		\
+	MAPPING(CLOUDABI_RIGHT_PROC_EXEC, CAP_FEXECVE)			\
+	MAPPING(CLOUDABI_RIGHT_SOCK_ACCEPT, CAP_ACCEPT)			\
+	MAPPING(CLOUDABI_RIGHT_SOCK_BIND_DIRECTORY, CAP_BINDAT)		\
+	MAPPING(CLOUDABI_RIGHT_SOCK_BIND_SOCKET, CAP_BIND)		\
+	MAPPING(CLOUDABI_RIGHT_SOCK_CONNECT_DIRECTORY, CAP_CONNECTAT)	\
+	MAPPING(CLOUDABI_RIGHT_SOCK_CONNECT_SOCKET, CAP_CONNECT)	\
+	MAPPING(CLOUDABI_RIGHT_SOCK_LISTEN, CAP_LISTEN)			\
+	MAPPING(CLOUDABI_RIGHT_SOCK_SHUTDOWN, CAP_SHUTDOWN)		\
+	MAPPING(CLOUDABI_RIGHT_SOCK_STAT_GET, CAP_GETPEERNAME,		\
+	    CAP_GETSOCKNAME, CAP_GETSOCKOPT)
+
 cloudabi_errno_t cloudabi_sys_fd_close(
     const struct cloudabi_sys_fd_close_args *uap, unsigned long *retval)
 {
@@ -290,9 +335,179 @@ cloudabi_filetype_t cloudabi_convert_filetype(struct file *file)
 	    file->f_path.dentry->d_inode->i_mode);
 }
 
+/* Removes rights that conflict with the file descriptor type. */
+void
+cloudabi_remove_conflicting_rights(cloudabi_filetype_t filetype,
+    cloudabi_rights_t *base, cloudabi_rights_t *inheriting)
+{
+
+	/*
+	 * CloudABI has a small number of additional rights bits to
+	 * disambiguate between multiple purposes. Remove the bits that
+	 * don't apply to the type of the file descriptor.
+	 *
+	 * As file descriptor access modes (O_ACCMODE) has been fully
+	 * replaced by rights bits, CloudABI distinguishes between
+	 * rights that apply to the file descriptor itself (base) versus
+	 * rights of new file descriptors derived from them
+	 * (inheriting). The code below approximates the pair by
+	 * decomposing depending on the file descriptor type.
+	 *
+	 * We need to be somewhat accurate about which actions can
+	 * actually be performed on the file descriptor, as functions
+	 * like fcntl(fd, F_GETFL) are emulated on top of this.
+	 */
+	switch (filetype) {
+	case CLOUDABI_FILETYPE_DIRECTORY:
+		*base &= CLOUDABI_RIGHT_FD_STAT_PUT_FLAGS |
+		    CLOUDABI_RIGHT_FD_SYNC | CLOUDABI_RIGHT_FILE_ADVISE |
+		    CLOUDABI_RIGHT_FILE_CREATE_DIRECTORY |
+		    CLOUDABI_RIGHT_FILE_CREATE_FILE |
+		    CLOUDABI_RIGHT_FILE_CREATE_FIFO |
+		    CLOUDABI_RIGHT_FILE_LINK_SOURCE |
+		    CLOUDABI_RIGHT_FILE_LINK_TARGET |
+		    CLOUDABI_RIGHT_FILE_OPEN |
+		    CLOUDABI_RIGHT_FILE_READDIR |
+		    CLOUDABI_RIGHT_FILE_READLINK |
+		    CLOUDABI_RIGHT_FILE_RENAME_SOURCE |
+		    CLOUDABI_RIGHT_FILE_RENAME_TARGET |
+		    CLOUDABI_RIGHT_FILE_STAT_FGET |
+		    CLOUDABI_RIGHT_FILE_STAT_FPUT_TIMES |
+		    CLOUDABI_RIGHT_FILE_STAT_GET |
+		    CLOUDABI_RIGHT_FILE_STAT_PUT_TIMES |
+		    CLOUDABI_RIGHT_FILE_SYMLINK |
+		    CLOUDABI_RIGHT_FILE_UNLINK |
+		    CLOUDABI_RIGHT_POLL_FD_READWRITE |
+		    CLOUDABI_RIGHT_SOCK_BIND_DIRECTORY |
+		    CLOUDABI_RIGHT_SOCK_CONNECT_DIRECTORY;
+		*inheriting &= CLOUDABI_RIGHT_FD_DATASYNC |
+		    CLOUDABI_RIGHT_FD_READ |
+		    CLOUDABI_RIGHT_FD_SEEK |
+		    CLOUDABI_RIGHT_FD_STAT_PUT_FLAGS |
+		    CLOUDABI_RIGHT_FD_SYNC |
+		    CLOUDABI_RIGHT_FD_TELL |
+		    CLOUDABI_RIGHT_FD_WRITE |
+		    CLOUDABI_RIGHT_FILE_ADVISE |
+		    CLOUDABI_RIGHT_FILE_ALLOCATE |
+		    CLOUDABI_RIGHT_FILE_CREATE_DIRECTORY |
+		    CLOUDABI_RIGHT_FILE_CREATE_FILE |
+		    CLOUDABI_RIGHT_FILE_CREATE_FIFO |
+		    CLOUDABI_RIGHT_FILE_LINK_SOURCE |
+		    CLOUDABI_RIGHT_FILE_LINK_TARGET |
+		    CLOUDABI_RIGHT_FILE_OPEN |
+		    CLOUDABI_RIGHT_FILE_READDIR |
+		    CLOUDABI_RIGHT_FILE_READLINK |
+		    CLOUDABI_RIGHT_FILE_RENAME_SOURCE |
+		    CLOUDABI_RIGHT_FILE_RENAME_TARGET |
+		    CLOUDABI_RIGHT_FILE_STAT_FGET |
+		    CLOUDABI_RIGHT_FILE_STAT_FPUT_SIZE |
+		    CLOUDABI_RIGHT_FILE_STAT_FPUT_TIMES |
+		    CLOUDABI_RIGHT_FILE_STAT_GET |
+		    CLOUDABI_RIGHT_FILE_STAT_PUT_TIMES |
+		    CLOUDABI_RIGHT_FILE_SYMLINK |
+		    CLOUDABI_RIGHT_FILE_UNLINK |
+		    CLOUDABI_RIGHT_MEM_MAP |
+		    CLOUDABI_RIGHT_MEM_MAP_EXEC |
+		    CLOUDABI_RIGHT_POLL_FD_READWRITE |
+		    CLOUDABI_RIGHT_PROC_EXEC |
+		    CLOUDABI_RIGHT_SOCK_BIND_DIRECTORY |
+		    CLOUDABI_RIGHT_SOCK_CONNECT_DIRECTORY;
+		break;
+	case CLOUDABI_FILETYPE_FIFO:
+		*base &= CLOUDABI_RIGHT_FD_READ |
+		    CLOUDABI_RIGHT_FD_STAT_PUT_FLAGS |
+		    CLOUDABI_RIGHT_FD_WRITE |
+		    CLOUDABI_RIGHT_FILE_STAT_FGET |
+		    CLOUDABI_RIGHT_POLL_FD_READWRITE;
+		*inheriting = 0;
+		break;
+	case CLOUDABI_FILETYPE_POLL:
+		*base &= ~CLOUDABI_RIGHT_FILE_ADVISE;
+		*inheriting = 0;
+		break;
+	case CLOUDABI_FILETYPE_PROCESS:
+		*base &= ~(CLOUDABI_RIGHT_FILE_ADVISE |
+		    CLOUDABI_RIGHT_POLL_FD_READWRITE);
+		*inheriting = 0;
+		break;
+	case CLOUDABI_FILETYPE_REGULAR_FILE:
+		*base &= CLOUDABI_RIGHT_FD_DATASYNC |
+		    CLOUDABI_RIGHT_FD_READ |
+		    CLOUDABI_RIGHT_FD_SEEK |
+		    CLOUDABI_RIGHT_FD_STAT_PUT_FLAGS |
+		    CLOUDABI_RIGHT_FD_SYNC |
+		    CLOUDABI_RIGHT_FD_TELL |
+		    CLOUDABI_RIGHT_FD_WRITE |
+		    CLOUDABI_RIGHT_FILE_ADVISE |
+		    CLOUDABI_RIGHT_FILE_ALLOCATE |
+		    CLOUDABI_RIGHT_FILE_STAT_FGET |
+		    CLOUDABI_RIGHT_FILE_STAT_FPUT_SIZE |
+		    CLOUDABI_RIGHT_FILE_STAT_FPUT_TIMES |
+		    CLOUDABI_RIGHT_MEM_MAP |
+		    CLOUDABI_RIGHT_MEM_MAP_EXEC |
+		    CLOUDABI_RIGHT_POLL_FD_READWRITE |
+		    CLOUDABI_RIGHT_PROC_EXEC;
+		*inheriting = 0;
+		break;
+	case CLOUDABI_FILETYPE_SHARED_MEMORY:
+		*base &= ~(CLOUDABI_RIGHT_FD_SEEK |
+		    CLOUDABI_RIGHT_FD_TELL |
+		    CLOUDABI_RIGHT_FILE_ADVISE |
+		    CLOUDABI_RIGHT_FILE_ALLOCATE |
+		    CLOUDABI_RIGHT_FILE_READDIR);
+		*inheriting = 0;
+		break;
+	case CLOUDABI_FILETYPE_SOCKET_DGRAM:
+	case CLOUDABI_FILETYPE_SOCKET_SEQPACKET:
+	case CLOUDABI_FILETYPE_SOCKET_STREAM:
+		*base &= CLOUDABI_RIGHT_FD_READ |
+		    CLOUDABI_RIGHT_FD_STAT_PUT_FLAGS |
+		    CLOUDABI_RIGHT_FD_WRITE |
+		    CLOUDABI_RIGHT_FILE_STAT_FGET |
+		    CLOUDABI_RIGHT_POLL_FD_READWRITE |
+		    CLOUDABI_RIGHT_SOCK_ACCEPT |
+		    CLOUDABI_RIGHT_SOCK_BIND_SOCKET |
+		    CLOUDABI_RIGHT_SOCK_CONNECT_SOCKET |
+		    CLOUDABI_RIGHT_SOCK_LISTEN |
+		    CLOUDABI_RIGHT_SOCK_SHUTDOWN |
+		    CLOUDABI_RIGHT_SOCK_STAT_GET;
+		break;
+	default:
+		*inheriting = 0;
+		break;
+	}
+}
+
+/* Converts Linux's Capsicum rights to CloudABI's set of rights. */
+static void
+convert_capabilities(const struct capsicum_rights *capabilities,
+    cloudabi_filetype_t filetype, cloudabi_rights_t *base,
+    cloudabi_rights_t *inheriting)
+{
+	struct capsicum_rights little;
+	cloudabi_rights_t rights;
+
+	/* Convert Linux bits to CloudABI bits. */
+	rights = 0;
+#define MAPPING(cloudabi, ...) do {				\
+	cap_rights_init(&little, ##__VA_ARGS__);		\
+	if (cap_rights_contains(capabilities, &little))		\
+		rights |= (cloudabi);				\
+} while (0);
+	RIGHTS_MAPPINGS
+#undef MAPPING
+
+	*base = rights;
+	*inheriting = rights;
+	cloudabi_remove_conflicting_rights(filetype, base, inheriting);
+}
+
 cloudabi_errno_t cloudabi_sys_fd_stat_get(
     const struct cloudabi_sys_fd_stat_get_args *uap, unsigned long *retval)
 {
+	struct capsicum_rights rights = {
+	    .primary.cr_rights = { CAP_ALL0, CAP_ALL1 },
+	};
 	cloudabi_fdstat_t fsb = {};
 	struct fd fd;
 	struct file *file;
@@ -314,11 +529,13 @@ cloudabi_errno_t cloudabi_sys_fd_stat_get(
 	if ((file->f_flags & O_SYNC) != 0)
 		fsb.fs_flags |= CLOUDABI_FDFLAG_SYNC;
 
-	/* TODO(ed): Set the right value. */
-	fsb.fs_rights_base = ~0;
-	fsb.fs_rights_inheriting = ~0;
+	/* TODO(ed): Fetch rights from the file descriptor. */
 
 	fdput(fd);
+
+	/* Convert capabilities to CloudABI rights. */
+	convert_capabilities(&rights, fsb.fs_filetype,
+	    &fsb.fs_rights_base, &fsb.fs_rights_inheriting);
 	return copy_to_user(uap->buf, &fsb, sizeof(fsb)) != 0 ?
 	    CLOUDABI_EFAULT : 0;
 }

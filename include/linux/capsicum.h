@@ -41,10 +41,8 @@ struct file *capsicum_file_install(const struct capsicum_rights *base_rights,
 				   struct file *file);
 
 /* Rights manipulation functions */
-#define cap_rights_init(rights, ...) \
-	_cap_rights_init((rights), __VA_ARGS__, CAP_LIST_END)
-#define cap_rights_set(rights, ...) \
-	_cap_rights_set((rights), __VA_ARGS__, CAP_LIST_END)
+#define cap_rights_init(...) _cap_rights_init(__VA_ARGS__, CAP_LIST_END)
+#define cap_rights_set(...) _cap_rights_set(__VA_ARGS__, CAP_LIST_END)
 struct capsicum_rights *_cap_rights_init(struct capsicum_rights *rights, ...);
 struct capsicum_rights *_cap_rights_set(struct capsicum_rights *rights, ...);
 struct capsicum_rights *cap_rights_vinit(struct capsicum_rights *rights,
@@ -53,6 +51,8 @@ struct capsicum_rights *cap_rights_vset(struct capsicum_rights *rights,
 					va_list ap);
 struct capsicum_rights *cap_rights_set_all(struct capsicum_rights *rights);
 bool cap_rights_is_all(const struct capsicum_rights *rights);
+bool cap_rights_contains(const struct capsicum_rights *big,
+                         const struct capsicum_rights *little);
 
 #else
 
