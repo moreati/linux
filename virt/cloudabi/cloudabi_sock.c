@@ -72,7 +72,9 @@ int create_sockstat(struct socket *sock, void __user *buf,
 	/* Fill ss_sockname and ss_peername. */
 	if (sock->ops->getname(sock, (struct sockaddr *)&address, &len, 0) == 0)
 		cloudabi_convert_sockaddr(&address, &ss.ss_sockname);
-	if (sock->ops->getname(sock, (struct sockaddr *)&address, &len, 1) == 0)
+	if (sock->sk->sk_state == TCP_ESTABLISHED &&
+	    sock->sk->sk_shutdown != SHUTDOWN_MASK &&
+	    sock->ops->getname(sock, (struct sockaddr *)&address, &len, 1) == 0)
 		cloudabi_convert_sockaddr(&address, &ss.ss_peername);
 
 	/* Fill ss_error. */
