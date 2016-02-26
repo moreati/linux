@@ -119,7 +119,6 @@ cloudabi_errno_t cloudabi_sys_fd_create1(
 	switch (uap->type) {
 	case CLOUDABI_FILETYPE_POLL:
 		return fd_create_poll(retval);
-		break;
 	case CLOUDABI_FILETYPE_SHARED_MEMORY:
 		fd = sys_memfd_create(NULL, 0);
 		break;
