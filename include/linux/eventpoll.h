@@ -19,6 +19,8 @@
 
 #ifdef CONFIG_EPOLL
 
+int ep_alloc_file(int flags, struct file **file);
+void ep_free_file(int fd, struct file *file);
 bool is_file_epoll(struct file *file);
 
 /* Used to initialize the epoll bits inside the "struct file" */

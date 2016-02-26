@@ -23,6 +23,7 @@
  * SUCH DAMAGE.
  */
 
+#include <linux/anon_inodes.h>
 #include <linux/audit.h>
 #include <linux/eventpoll.h>
 #include <linux/fdtable.h>
@@ -90,13 +91,34 @@ cloudabi_errno_t cloudabi_sys_fd_close(
 	return cloudabi_convert_errno(sys_close(uap->fd));
 }
 
+static cloudabi_errno_t fd_create_poll(unsigned long *retval)
+{
+	struct capsicum_rights rights;
+	struct file *file, *installfile;
+	int fd;
+
+	fd = ep_alloc_file(0, &file);
+	if (fd < 0)
+		return cloudabi_convert_errno(fd);
+
+	cap_rights_init(&rights, CAP_FSTAT, CAP_KQUEUE);
+	installfile = capsicum_file_install(&rights, file);
+	if (IS_ERR(installfile)) {
+		fput(file);
+		return cloudabi_convert_errno(PTR_ERR(installfile));
+	}
+	fd_install(fd, installfile);
+	retval[0] = fd;
+	return 0;
+}
+
 cloudabi_errno_t cloudabi_sys_fd_create1(
     const struct cloudabi_sys_fd_create1_args *uap, unsigned long *retval) {
 	long fd;
 
 	switch (uap->type) {
 	case CLOUDABI_FILETYPE_POLL:
-		fd = sys_epoll_create1(0);
+		return fd_create_poll(retval);
 		break;
 	case CLOUDABI_FILETYPE_SHARED_MEMORY:
 		fd = sys_memfd_create(NULL, 0);
@@ -505,17 +527,20 @@ convert_capabilities(const struct capsicum_rights *capabilities,
 cloudabi_errno_t cloudabi_sys_fd_stat_get(
     const struct cloudabi_sys_fd_stat_get_args *uap, unsigned long *retval)
 {
-	struct capsicum_rights rights = {
-	    .primary.cr_rights = { CAP_ALL0, CAP_ALL1 },
-	};
+	struct capsicum_rights rights;
 	cloudabi_fdstat_t fsb = {};
 	struct fd fd;
+	const struct capsicum_rights *actual_rights;
 	struct file *file;
 
 	fd = fdget_raw(uap->fd);
 	if (fd.file == NULL)
 		return CLOUDABI_EBADF;
 	file = fd.file;
+
+	cap_rights_init(&rights);
+	file = capsicum_file_lookup(file, &rights, &actual_rights);
+	rights = *actual_rights;
 
 	fsb.fs_filetype = cloudabi_convert_filetype(file);
 
@@ -528,8 +553,6 @@ cloudabi_errno_t cloudabi_sys_fd_stat_get(
 		fsb.fs_flags |= CLOUDABI_FDFLAG_NONBLOCK;
 	if ((file->f_flags & O_SYNC) != 0)
 		fsb.fs_flags |= CLOUDABI_FDFLAG_SYNC;
-
-	/* TODO(ed): Fetch rights from the file descriptor. */
 
 	fdput(fd);
 
