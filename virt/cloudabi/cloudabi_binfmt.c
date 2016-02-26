@@ -220,6 +220,14 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 
 	setup_new_exec(bprm);
 
+	/*
+	 * As CloudABI does not support modifying the signal setup, we'd
+	 * better use sane defaults. Reset signal handlers to their
+	 * default state, except for SIGPIPE.
+	 */
+	flush_signal_handlers(current, 1);
+	current->sighand->action[SIGPIPE - 1].sa.sa_handler = SIG_IGN;
+
 	error = setup_arg_pages(bprm, cloudabi_binfmt_randomize_stack(),
 	    EXSTACK_DISABLE_X);
 	if (error != 0)
