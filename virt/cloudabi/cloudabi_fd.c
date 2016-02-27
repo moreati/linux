@@ -104,6 +104,7 @@ static cloudabi_errno_t fd_create_poll(unsigned long *retval)
 	cap_rights_init(&rights, CAP_FSTAT, CAP_KQUEUE);
 	installfile = capsicum_file_install(&rights, file);
 	if (IS_ERR(installfile)) {
+		/* TODO(ed): This is not right, I guess? */
 		fput(file);
 		return cloudabi_convert_errno(PTR_ERR(installfile));
 	}
