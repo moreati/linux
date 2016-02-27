@@ -142,7 +142,67 @@ cloudabi_errno_t cloudabi_sys_fd_create1(
 	return 0;
 }
 
-static cloudabi_errno_t do_socketpair(int type, unsigned long *retval) {
+static cloudabi_errno_t fd_create_pipe(unsigned long *retval)
+{
+	struct capsicum_rights rights;
+	struct file *files[2], *installfile;
+	int fds[2];
+	int error;
+
+	/* Create a pipe. */
+	error = create_pipe_files(files, 0);
+	if (error != 0)
+		return cloudabi_convert_errno(error);
+
+	/* Apply Capsicum restrictions to the read file descriptor. */
+	cap_rights_init(&rights, CAP_EVENT, CAP_FCNTL, CAP_FSTAT, CAP_READ);
+	rights.fcntls = CAP_FCNTL_GETFL | CAP_FCNTL_SETFL;
+	installfile = capsicum_file_install(&rights, files[0]);
+	if (IS_ERR(installfile)) {
+		error = PTR_ERR(installfile);
+		goto bad;
+	}
+	files[0] = installfile;
+
+	/* Apply Capsicum restrictions to the write file descriptor. */
+	cap_rights_init(&rights, CAP_EVENT, CAP_FCNTL, CAP_FSTAT, CAP_WRITE);
+	rights.fcntls = CAP_FCNTL_GETFL | CAP_FCNTL_SETFL;
+	installfile = capsicum_file_install(&rights, files[1]);
+	if (IS_ERR(installfile)) {
+		error = PTR_ERR(installfile);
+		goto bad;
+	}
+	files[1] = installfile;
+
+	/* Allocate file descriptor table entries. */
+	fds[0] = get_unused_fd_flags(0);
+	if (fds[0] < 0) {
+		error = fds[0];
+		goto bad;
+	}
+	fds[1] = get_unused_fd_flags(0);
+	if (fds[1] < 0) {
+		put_unused_fd(fds[0]);
+		error = fds[1];
+		goto bad;
+	}
+
+	/* Return the pipe. */
+	audit_fd_pair(fds[0], fds[1]);
+	fd_install(fds[0], files[0]);
+	fd_install(fds[1], files[1]);
+	retval[0] = fds[0];
+	retval[1] = fds[1];
+	return 0;
+
+bad:
+	fput(files[0]);
+	fput(files[1]);
+	return cloudabi_convert_errno(error);
+}
+
+static cloudabi_errno_t fd_create_socketpair(int type, unsigned long *retval)
+{
 	struct socket *sock1, *sock2;
 	int fd1, fd2, err;
 	struct file *newfile1, *newfile2;
@@ -214,23 +274,14 @@ cloudabi_errno_t cloudabi_sys_fd_create2(
     const struct cloudabi_sys_fd_create2_args *uap, unsigned long *retval)
 {
 	switch (uap->type) {
-	case CLOUDABI_FILETYPE_FIFO: {
-		int fds[2];
-		int error;
-
-		error = do_pipe_flags(fds, 0);
-		if (error != 0)
-			return cloudabi_convert_errno(error);
-		retval[0] = fds[0];
-		retval[1] = fds[1];
-		return 0;
-	}
+	case CLOUDABI_FILETYPE_FIFO:
+		return fd_create_pipe(retval);
 	case CLOUDABI_FILETYPE_SOCKET_DGRAM:
-		return do_socketpair(SOCK_DGRAM, retval);
+		return fd_create_socketpair(SOCK_DGRAM, retval);
 	case CLOUDABI_FILETYPE_SOCKET_SEQPACKET:
-		return do_socketpair(SOCK_SEQPACKET, retval);
+		return fd_create_socketpair(SOCK_SEQPACKET, retval);
 	case CLOUDABI_FILETYPE_SOCKET_STREAM:
-		return do_socketpair(SOCK_STREAM, retval);
+		return fd_create_socketpair(SOCK_STREAM, retval);
 	default:
 		return CLOUDABI_EINVAL;
 	}
@@ -564,10 +615,29 @@ cloudabi_errno_t cloudabi_sys_fd_stat_get(
 	    CLOUDABI_EFAULT : 0;
 }
 
+static cloudabi_errno_t cloudabi_convert_rights(cloudabi_rights_t in,
+                                                struct capsicum_rights *out)
+{
+	cap_rights_init(out);
+#define MAPPING(cloudabi, ...) do {			\
+	if (in & (cloudabi)) {				\
+		cap_rights_set(out, ##__VA_ARGS__);	\
+		in &= ~(cloudabi);			\
+	}						\
+} while (0);
+	RIGHTS_MAPPINGS
+#undef MAPPING
+	if (in != 0)
+		return CLOUDABI_ENOTCAPABLE;
+	return 0;
+}
+
 cloudabi_errno_t cloudabi_sys_fd_stat_put(
     const struct cloudabi_sys_fd_stat_put_args *uap, unsigned long *retval)
 {
+	struct capsicum_rights rights;
 	cloudabi_fdstat_t fsb;
+	cloudabi_errno_t error;
 	int oflags;
 
 	if (copy_from_user(&fsb, uap->buf, sizeof(fsb)) != 0)
@@ -587,6 +657,14 @@ cloudabi_errno_t cloudabi_sys_fd_stat_put(
 			oflags |= O_SYNC;
 		return cloudabi_convert_errno(
 		    sys_fcntl(uap->fd, F_SETFL, oflags));
+	} else if (uap->flags == CLOUDABI_FDSTAT_RIGHTS) {
+		/* Convert rights. */
+		error = cloudabi_convert_rights(
+		    fsb.fs_rights_base | fsb.fs_rights_inheriting, &rights);
+		if (error != 0)
+			return error;
+		return cloudabi_convert_errno(
+		    capsicum_rights_limit(uap->fd, &rights));
 	}
 	return CLOUDABI_EINVAL;
 }

@@ -13,6 +13,8 @@ struct capsicum_rights {
 	unsigned int *ioctls;
 };
 
+int capsicum_rights_limit(unsigned int fd, struct capsicum_rights *rights);
+
 #define CAP_LIST_END	0ULL
 
 #ifdef CONFIG_SECURITY_CAPSICUM

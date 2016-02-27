@@ -124,8 +124,7 @@ out_err:
 }
 
 /* Takes ownership of rights->ioctls */
-static int capsicum_rights_limit(unsigned int fd,
-				 struct capsicum_rights *rights)
+int capsicum_rights_limit(unsigned int fd, struct capsicum_rights *rights)
 {
 	int rc = -EBADF;
 	struct capsicum_capability *cap;
