@@ -341,7 +341,7 @@ futex_condvar_lookup_or_create(struct task_struct *td,
 	}
 
 	/* None found. Create new condition variable object. */
-	fc = kmalloc(sizeof(*fc), GFP_KERNEL);
+	fc = kmalloc(sizeof(*fc), GFP_KERNEL | __GFP_NOFAIL);
 	fc->fc_address = fa_condvar;
 	fc->fc_lock = futex_lock_lookup_locked(&fa_lock);
 	futex_queue_init(&fc->fc_waiters);
@@ -429,7 +429,7 @@ futex_lock_lookup_locked(struct futex_address *fa)
 	}
 
 	/* None found. Create new lock object. */
-	fl = kmalloc(sizeof(*fl), GFP_KERNEL);
+	fl = kmalloc(sizeof(*fl), GFP_KERNEL | __GFP_NOFAIL);
 	fl->fl_address = *fa;
 	fl->fl_owner = LOCK_UNMANAGED;
 	futex_queue_init(&fl->fl_readers);
