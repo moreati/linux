@@ -113,6 +113,36 @@ static cloudabi_errno_t fd_create_poll(unsigned long *retval)
 	return 0;
 }
 
+static cloudabi_errno_t fd_create_shared_memory(unsigned long *retval)
+{
+	struct capsicum_rights rights;
+	struct file *file, *installfile;
+	int fd;
+
+	fd = get_unused_fd_flags(0);
+	if (fd < 0)
+		return cloudabi_convert_errno(fd);
+
+	file = shmem_file_setup("CloudABI shared memory", 0, VM_NORESERVE);
+	if (IS_ERR(file)) {
+		put_unused_fd(fd);
+		return cloudabi_convert_errno(PTR_ERR(file));
+	}
+	file->f_flags |= O_RDWR | O_LARGEFILE;
+
+	cap_rights_init(&rights, CAP_FSTAT, CAP_FTRUNCATE, CAP_MMAP_RWX);
+	installfile = capsicum_file_install(&rights, file);
+	if (IS_ERR(installfile)) {
+		put_unused_fd(fd);
+		fput(file);
+		return cloudabi_convert_errno(PTR_ERR(installfile));
+	}
+
+	fd_install(fd, installfile);
+	retval[0] = fd;
+	return 0;
+}
+
 cloudabi_errno_t cloudabi_sys_fd_create1(
     const struct cloudabi_sys_fd_create1_args *uap, unsigned long *retval) {
 	long fd;
@@ -121,8 +151,7 @@ cloudabi_errno_t cloudabi_sys_fd_create1(
 	case CLOUDABI_FILETYPE_POLL:
 		return fd_create_poll(retval);
 	case CLOUDABI_FILETYPE_SHARED_MEMORY:
-		fd = sys_memfd_create(NULL, 0);
-		break;
+		return fd_create_shared_memory(retval);
 	case CLOUDABI_FILETYPE_SOCKET_DGRAM:
 		fd = sys_socket(AF_UNIX, SOCK_DGRAM, 0);
 		break;

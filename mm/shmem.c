@@ -2986,33 +2986,27 @@ SYSCALL_DEFINE2(memfd_create,
 	if (flags & ~(unsigned int)MFD_ALL_FLAGS)
 		return -EINVAL;
 
-	if (uname != NULL) {
-		/* length includes terminating zero */
-		len = strnlen_user(uname, MFD_NAME_MAX_LEN + 1);
-		if (len <= 0)
-			return -EFAULT;
-		if (len > MFD_NAME_MAX_LEN + 1)
-			return -EINVAL;
+	/* length includes terminating zero */
+	len = strnlen_user(uname, MFD_NAME_MAX_LEN + 1);
+	if (len <= 0)
+		return -EFAULT;
+	if (len > MFD_NAME_MAX_LEN + 1)
+		return -EINVAL;
 
-		name = kmalloc(len + MFD_NAME_PREFIX_LEN, GFP_TEMPORARY);
-		if (!name)
-			return -ENOMEM;
+	name = kmalloc(len + MFD_NAME_PREFIX_LEN, GFP_TEMPORARY);
+	if (!name)
+		return -ENOMEM;
 
-		strcpy(name, MFD_NAME_PREFIX);
-		if (copy_from_user(&name[MFD_NAME_PREFIX_LEN], uname, len)) {
-			error = -EFAULT;
-			goto err_name;
-		}
+	strcpy(name, MFD_NAME_PREFIX);
+	if (copy_from_user(&name[MFD_NAME_PREFIX_LEN], uname, len)) {
+		error = -EFAULT;
+		goto err_name;
+	}
 
-		/* terminating-zero may have changed after strnlen_user() returned */
-		if (name[len + MFD_NAME_PREFIX_LEN - 1]) {
-			error = -EFAULT;
-			goto err_name;
-		}
-	} else {
-		name = kstrdup(MFD_NAME_PREFIX, GFP_TEMPORARY);
-		if (!name)
-			return -ENOMEM;
+	/* terminating-zero may have changed after strnlen_user() returned */
+	if (name[len + MFD_NAME_PREFIX_LEN - 1]) {
+		error = -EFAULT;
+		goto err_name;
 	}
 
 	fd = get_unused_fd_flags((flags & MFD_CLOEXEC) ? O_CLOEXEC : 0);
