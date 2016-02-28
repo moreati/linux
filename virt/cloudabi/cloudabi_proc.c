@@ -24,6 +24,7 @@
  */
 
 #include <linux/binfmts.h>
+#include <linux/capsicum.h>
 #include <linux/fdtable.h>
 #include <linux/fs_struct.h>
 #include <linux/highmem.h>
@@ -313,6 +314,7 @@ cloudabi_errno_t cloudabi_sys_proc_exit(
 cloudabi_errno_t cloudabi_sys_proc_fork(
     const void *uap, unsigned long *retval)
 {
+	struct capsicum_rights rights;
 	struct clone4_args clone4_args = {};
 	struct clonefd_setup clonefd_setup = {};
 	struct pt_regs *regs;
@@ -320,6 +322,8 @@ cloudabi_errno_t cloudabi_sys_proc_fork(
 	cloudabi_tid_t tid;
 
 	/* Create a new process. */
+	cap_rights_init(&rights, CAP_FSTAT, CAP_PDWAIT);
+	clonefd_setup.rights = &rights;
 	child = copy_process(CLONE_FD, &clone4_args, NULL, 0, &clonefd_setup);
 	if (IS_ERR(child))
 		return cloudabi_convert_errno(PTR_ERR(child));

@@ -2658,7 +2658,9 @@ extern int do_execveat(int, struct filename *,
 		       const char __user * const __user *,
 		       int);
 #ifdef CONFIG_CLONEFD
+struct capsicum_rights;
 struct clonefd_setup {
+	struct capsicum_rights *rights;
 	int fd;
 	struct file *file;
 };

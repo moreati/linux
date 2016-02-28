@@ -210,7 +210,7 @@ int clonefd_do_clone(u64 clone_flags, struct task_struct *p,
 {
 	int flags;
 	struct clonefd_data *data;
-	struct file *file;
+	struct file *file, *installfile;
 	int fd;
 
 	p->clonefd = !!(clone_flags & CLONE_FD);
@@ -239,6 +239,15 @@ int clonefd_do_clone(u64 clone_flags, struct task_struct *p,
 	if (IS_ERR(file)) {
 		put_task_struct(p);
 		return PTR_ERR(file);
+	}
+
+	if (setup->rights != NULL) {
+		installfile = capsicum_file_install(setup->rights, file);
+		if (installfile == NULL) {
+			fput(file);
+			return PTR_ERR(installfile);
+		}
+		file = installfile;
 	}
 
 	fd = get_unused_fd_flags(flags);
