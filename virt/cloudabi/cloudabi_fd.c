@@ -501,8 +501,7 @@ cloudabi_remove_conflicting_rights(cloudabi_filetype_t filetype,
 		*inheriting = 0;
 		break;
 	case CLOUDABI_FILETYPE_PROCESS:
-		*base &= ~(CLOUDABI_RIGHT_FILE_ADVISE |
-		    CLOUDABI_RIGHT_POLL_FD_READWRITE);
+		*base &= ~CLOUDABI_RIGHT_FILE_ADVISE;
 		*inheriting = 0;
 		break;
 	case CLOUDABI_FILETYPE_REGULAR_FILE:
