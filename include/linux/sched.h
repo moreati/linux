@@ -2662,6 +2662,7 @@ struct clonefd_setup {
 	int fd;
 	struct file *file;
 };
+bool is_file_clonefd(struct file *f);
 void clonefd_install_fd(struct clone4_args *args, struct clonefd_setup *setup);
 int clonefd_wait(int fd, bool wnohang, int *exit_code);
 #else

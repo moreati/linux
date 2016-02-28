@@ -382,9 +382,10 @@ cloudabi_filetype_t cloudabi_convert_filetype(struct file *file)
 	int err;
 
 	/* Specialized file descriptor types. */
-	/* TODO(ed): PROCESS still missing. */
 	if (is_file_epoll(file))
 		return CLOUDABI_FILETYPE_POLL;
+	if (is_file_clonefd(file))
+		return CLOUDABI_FILETYPE_PROCESS;
 	if (is_file_shmem(file))
 		return CLOUDABI_FILETYPE_SHARED_MEMORY;
 

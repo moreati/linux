@@ -166,6 +166,11 @@ static const struct file_operations clonefd_fops = {
 	.show_fdinfo = clonefd_show_fdinfo,
 };
 
+bool is_file_clonefd(struct file *f)
+{
+	return f->f_op == &clonefd_fops;
+}
+
 int clonefd_wait(int fd, bool wnohang, int *exit_code) {
 	struct file *file;
 	struct clonefd_data *data;
