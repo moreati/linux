@@ -177,19 +177,25 @@ out:
 cloudabi_errno_t cloudabi_sys_file_open(
     const struct cloudabi_sys_file_open_args *uap, unsigned long *retval)
 {
+	struct capsicum_rights rights;
 	cloudabi_fdstat_t fds;
+	const struct capsicum_rights *actual_rights;
+	struct file *actual_file, *file, *installfile;
+	struct filename *name;
+	cloudabi_errno_t error;
 	long fd;
-	int oflags;
+	int flags;
+	bool read, write;
 
 	/* Copy in initial file descriptor properties. */
 	if (copy_from_user(&fds, uap->fds, sizeof(fds)) != 0)
 		return CLOUDABI_EFAULT;
 
 	/* Translate flags. */
-	oflags = O_NOCTTY;
+	flags = O_NOCTTY;
 #define	COPY_FLAG(flag) do {						\
 	if (uap->oflags & CLOUDABI_O_##flag)				\
-		oflags |= O_##flag;					\
+		flags |= O_##flag;					\
 } while (0)
 	COPY_FLAG(CREAT);
 	COPY_FLAG(DIRECTORY);
@@ -198,37 +204,69 @@ cloudabi_errno_t cloudabi_sys_file_open(
 #undef COPY_FLAG
 #define	COPY_FLAG(flag) do {						\
 	if (fds.fs_flags & CLOUDABI_FDFLAG_##flag)			\
-		oflags |= O_##flag;					\
+		flags |= O_##flag;					\
 } while (0)
 	COPY_FLAG(APPEND);
 	COPY_FLAG(DSYNC);
 	COPY_FLAG(NONBLOCK);
 #undef COPY_FLAG
 	if (fds.fs_flags & (CLOUDABI_FDFLAG_SYNC | CLOUDABI_FDFLAG_RSYNC))
-		oflags |= O_SYNC;
+		flags |= O_SYNC;
 	if ((uap->fd & CLOUDABI_LOOKUP_SYMLINK_FOLLOW) == 0)
-		oflags |= O_NOFOLLOW;
+		flags |= O_NOFOLLOW;
 
-	/* Roughly convert rights to open() access mode. */
-	if ((fds.fs_rights_base &
-	    (CLOUDABI_RIGHT_FD_READ | CLOUDABI_RIGHT_FILE_READDIR)) != 0 &&
-	    (fds.fs_rights_base & CLOUDABI_RIGHT_FD_WRITE) != 0)
-		oflags |= O_RDWR;
-	else if ((fds.fs_rights_base &
-	    (CLOUDABI_RIGHT_FD_READ | CLOUDABI_RIGHT_FILE_READDIR)) != 0)
-		oflags |= O_RDONLY;
-	else if ((fds.fs_rights_base & CLOUDABI_RIGHT_FD_WRITE) != 0)
-		oflags |= O_WRONLY;
-	else if ((fds.fs_rights_base &
-	    (CLOUDABI_RIGHT_PROC_EXEC | CLOUDABI_RIGHT_FILE_OPEN)) != 0)
-		oflags |= O_RDONLY;
-	else
-		return CLOUDABI_EINVAL;
+	/* Convert rights to corresponding access mode. */
+	read = (fds.fs_rights_base & (CLOUDABI_RIGHT_FD_READ |
+	    CLOUDABI_RIGHT_FILE_READDIR | CLOUDABI_RIGHT_MEM_MAP_EXEC)) != 0;
+	write = (fds.fs_rights_base & (CLOUDABI_RIGHT_FD_DATASYNC |
+	    CLOUDABI_RIGHT_FD_WRITE | CLOUDABI_RIGHT_FILE_ALLOCATE |
+	    CLOUDABI_RIGHT_FILE_STAT_FPUT_SIZE)) != 0;
+	flags |= write ? read ? O_RDWR : O_WRONLY : O_RDONLY;
 
-	/* TODO(ed): Respect path length! */
-	fd = sys_openat((cloudabi_fd_t)uap->fd, uap->path, oflags, 0777);
-	if (fd < 0)
+	/* Open the file. */
+	fd = get_unused_fd_flags(flags);
+	if (fd < 0) {
+		printk(KERN_ERR "Failed to get fd\n");
 		return cloudabi_convert_errno(fd);
+	}
+	name = getname_fixed_length(uap->path, uap->pathlen);
+	if (IS_ERR(name)) {
+		put_unused_fd(fd);
+		printk(KERN_ERR "Failed to get name\n");
+		return cloudabi_convert_errno(PTR_ERR(name));
+	}
+	file = file_open_name(uap->fd, name, flags, 0777);
+	putname(name);
+	if (IS_ERR(file)) {
+		put_unused_fd(fd);
+		printk(KERN_ERR "Failed to do_filp_open()\n");
+		return cloudabi_convert_errno(PTR_ERR(file));
+	}
+
+	/* Determine which rights should be placed on the new file. */
+	cap_rights_init(&rights);
+	actual_file = capsicum_file_lookup(file, &rights, &actual_rights);
+	cloudabi_remove_conflicting_rights(
+	    cloudabi_convert_filetype(actual_file),
+	    &fds.fs_rights_base, &fds.fs_rights_inheriting);
+	error = cloudabi_convert_rights(
+	    fds.fs_rights_base | fds.fs_rights_inheriting, &rights);
+	if (error != 0) {
+		put_unused_fd(fd);
+		fput(file);
+		printk(KERN_ERR "Failed to convert rights\n");
+		return error;
+	}
+
+	/* Restrict the rights on the new file descriptor. */
+	installfile = capsicum_file_install(&rights, file);
+	if (IS_ERR(installfile)) {
+		put_unused_fd(fd);
+		fput(file);
+		printk(KERN_ERR "Failed to install wrapped file\n");
+		return cloudabi_convert_errno(PTR_ERR(installfile));
+	}
+	fd_install(fd, installfile);
 	retval[0] = fd;
 	return 0;
 }
