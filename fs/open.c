@@ -962,6 +962,7 @@ static inline int build_open_flags(int flags, umode_t mode, struct open_flags *o
 /**
  * file_open_name - open file and return file pointer
  *
+ * @dfd:	file descriptor of base directory
  * @name:	struct filename containing path to open
  * @flags:	open flags as per the open(2) second argument
  * @mode:	mode for the new file if O_CREAT is set, else ignored
@@ -970,11 +971,12 @@ static inline int build_open_flags(int flags, umode_t mode, struct open_flags *o
  * have to.  But in generally you should not do this, so please move
  * along, nothing to see here..
  */
-struct file *file_open_name(struct filename *name, int flags, umode_t mode)
+struct file *file_open_name(int dfd, struct filename *name, int flags,
+                            umode_t mode)
 {
 	struct open_flags op;
 	int err = build_open_flags(flags, mode, &op);
-	return err ? ERR_PTR(err) : do_filp_open(AT_FDCWD, name, &op);
+	return err ? ERR_PTR(err) : do_filp_open(dfd, name, &op);
 }
 
 /**
@@ -994,7 +996,7 @@ struct file *filp_open(const char *filename, int flags, umode_t mode)
 	struct file *file = ERR_CAST(name);
 	
 	if (!IS_ERR(name)) {
-		file = file_open_name(name, flags, mode);
+		file = file_open_name(AT_FDCWD, name, flags, mode);
 		putname(name);
 	}
 	return file;

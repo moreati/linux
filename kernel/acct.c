@@ -201,7 +201,8 @@ static int acct_on(struct filename *pathname)
 		return -ENOMEM;
 
 	/* Difference from BSD - they don't do O_APPEND */
-	file = file_open_name(pathname, O_WRONLY|O_APPEND|O_LARGEFILE, 0);
+	file = file_open_name(AT_FDCWD, pathname,
+	                      O_WRONLY|O_APPEND|O_LARGEFILE, 0);
 	if (IS_ERR(file)) {
 		kfree(acct);
 		return PTR_ERR(file);
