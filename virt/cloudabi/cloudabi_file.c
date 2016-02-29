@@ -239,12 +239,7 @@ cloudabi_errno_t cloudabi_sys_file_open(
 		return cloudabi_convert_errno(PTR_ERR(file));
 	}
 
-	/* Determine which rights should be placed on the new file. */
-	cap_rights_init(&rights);
-	actual_file = capsicum_file_lookup(file, &rights, &actual_rights);
-	cloudabi_remove_conflicting_rights(
-	    cloudabi_convert_filetype(actual_file),
-	    &fds.fs_rights_base, &fds.fs_rights_inheriting);
+	/* Ensure that the new file has at least the rights we requested. */
 	error = cloudabi_convert_rights(
 	    fds.fs_rights_base | fds.fs_rights_inheriting, &rights);
 	if (error != 0) {
@@ -252,12 +247,34 @@ cloudabi_errno_t cloudabi_sys_file_open(
 		fput(file);
 		return error;
 	}
-
-	/* Restrict the rights on the new file descriptor. */
-	installfile = capsicum_file_install(&rights, file);
-	if (IS_ERR(installfile)) {
+	actual_file = capsicum_file_lookup(file, &rights, &actual_rights);
+	if (IS_ERR(actual_file)) {
 		put_unused_fd(fd);
 		fput(file);
+		return cloudabi_convert_errno(PTR_ERR(actual_file));
+	}
+
+	/* Discard the capability descriptor. Extract the raw file again. */
+	actual_file = get_file(actual_file);
+	fput(file);
+
+	/* Determine which rights should be placed on the new file. */
+	cloudabi_remove_conflicting_rights(
+	    cloudabi_convert_filetype(actual_file),
+	    &fds.fs_rights_base, &fds.fs_rights_inheriting);
+	cloudabi_convert_rights(fds.fs_rights_base | fds.fs_rights_inheriting,
+	                        &rights);
+	if (error != 0) {
+		put_unused_fd(fd);
+		fput(actual_file);
+		return error;
+	}
+
+	/* Restrict the rights on the new file descriptor. */
+	installfile = capsicum_file_install(&rights, actual_file);
+	if (IS_ERR(installfile)) {
+		put_unused_fd(fd);
+		fput(actual_file);
 		return cloudabi_convert_errno(PTR_ERR(installfile));
 	}
 	fd_install(fd, installfile);
