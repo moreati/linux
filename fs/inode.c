@@ -1905,8 +1905,15 @@ void __init inode_init(void)
 		INIT_HLIST_HEAD(&inode_hashtable[loop]);
 }
 
+static int no_open_sock(struct inode *inode, struct file *file)
+{
+	return -EOPNOTSUPP;
+}
+
 void init_special_inode(struct inode *inode, umode_t mode, dev_t rdev)
 {
+	static const struct file_operations sock_fops = {.open = no_open_sock};
+
 	inode->i_mode = mode;
 	if (S_ISCHR(mode)) {
 		inode->i_fop = &def_chr_fops;
@@ -1917,7 +1924,8 @@ void init_special_inode(struct inode *inode, umode_t mode, dev_t rdev)
 	} else if (S_ISFIFO(mode))
 		inode->i_fop = &pipefifo_fops;
 	else if (S_ISSOCK(mode))
-		;	/* leave it no_open_fops */
+		/* open() on a socket needs to return EOPNOTSUPP. */
+		inode->i_fop = &sock_fops;
 	else
 		printk(KERN_DEBUG "init_special_inode: bogus i_mode (%o) for"
 				  " inode %s:%lu\n", mode, inode->i_sb->s_id,
