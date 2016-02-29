@@ -225,21 +225,17 @@ cloudabi_errno_t cloudabi_sys_file_open(
 
 	/* Open the file. */
 	fd = get_unused_fd_flags(flags);
-	if (fd < 0) {
-		printk(KERN_ERR "Failed to get fd\n");
+	if (fd < 0)
 		return cloudabi_convert_errno(fd);
-	}
 	name = getname_fixed_length(uap->path, uap->pathlen);
 	if (IS_ERR(name)) {
 		put_unused_fd(fd);
-		printk(KERN_ERR "Failed to get name\n");
 		return cloudabi_convert_errno(PTR_ERR(name));
 	}
 	file = file_open_name(uap->fd, name, flags, 0777);
 	putname(name);
 	if (IS_ERR(file)) {
 		put_unused_fd(fd);
-		printk(KERN_ERR "Failed to do_filp_open()\n");
 		return cloudabi_convert_errno(PTR_ERR(file));
 	}
 
@@ -254,7 +250,6 @@ cloudabi_errno_t cloudabi_sys_file_open(
 	if (error != 0) {
 		put_unused_fd(fd);
 		fput(file);
-		printk(KERN_ERR "Failed to convert rights\n");
 		return error;
 	}
 
@@ -263,7 +258,6 @@ cloudabi_errno_t cloudabi_sys_file_open(
 	if (IS_ERR(installfile)) {
 		put_unused_fd(fd);
 		fput(file);
-		printk(KERN_ERR "Failed to install wrapped file\n");
 		return cloudabi_convert_errno(PTR_ERR(installfile));
 	}
 	fd_install(fd, installfile);
