@@ -649,6 +649,8 @@ cloudabi_errno_t cloudabi_convert_rights(cloudabi_rights_t in,
                                          struct capsicum_rights *out)
 {
 	cap_rights_init(out);
+	if (in & CLOUDABI_RIGHT_FD_STAT_PUT_FLAGS)
+		out->fcntls |= CAP_FCNTL_SETFL;
 #define MAPPING(cloudabi, ...) do {			\
 	if (in & (cloudabi)) {				\
 		cap_rights_set(out, ##__VA_ARGS__);	\
