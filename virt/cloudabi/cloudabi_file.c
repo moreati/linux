@@ -74,11 +74,11 @@ cloudabi_errno_t cloudabi_sys_file_create(
 
 	switch (uap->type) {
 	case CLOUDABI_FILETYPE_DIRECTORY:
-		lookup_flags = 0;
+		lookup_flags = LOOKUP_DIRECTORY;
 		cap_rights_init(&rights, CAP_LOOKUP, CAP_MKDIRAT);
 		break;
 	case CLOUDABI_FILETYPE_FIFO:
-		lookup_flags = LOOKUP_DIRECTORY;
+		lookup_flags = 0;
 		cap_rights_init(&rights, CAP_LOOKUP, CAP_MKFIFOAT);
 		break;
 	default:
