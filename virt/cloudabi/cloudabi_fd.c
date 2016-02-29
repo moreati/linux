@@ -439,8 +439,7 @@ cloudabi_filetype_t cloudabi_convert_filetype(struct file *file)
 }
 
 /* Removes rights that conflict with the file descriptor type. */
-void
-cloudabi_remove_conflicting_rights(cloudabi_filetype_t filetype,
+void cloudabi_remove_conflicting_rights(cloudabi_filetype_t filetype,
     cloudabi_rights_t *base, cloudabi_rights_t *inheriting)
 {
 
@@ -645,8 +644,9 @@ cloudabi_errno_t cloudabi_sys_fd_stat_get(
 	    CLOUDABI_EFAULT : 0;
 }
 
-static cloudabi_errno_t cloudabi_convert_rights(cloudabi_rights_t in,
-                                                struct capsicum_rights *out)
+/* Converts CloudABI rights to a set of Capsicum capabilities. */
+cloudabi_errno_t cloudabi_convert_rights(cloudabi_rights_t in,
+                                         struct capsicum_rights *out)
 {
 	cap_rights_init(out);
 #define MAPPING(cloudabi, ...) do {			\

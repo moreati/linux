@@ -28,6 +28,7 @@
 
 #include "cloudabi_syscalldefs.h"
 
+struct capsicum_rights;
 struct file;
 struct task_struct;
 
@@ -49,6 +50,14 @@ int cloudabi_clock_time_get(cloudabi_clockid_t, cloudabi_timestamp_t *);
 
 /* Converts a CloudABI clock ID to a Linux clock ID. */
 int cloudabi_convert_clockid(cloudabi_clockid_t, clockid_t *);
+
+/* Converts CloudABI rights to a set of Capsicum capabilities. */
+cloudabi_errno_t cloudabi_convert_rights(cloudabi_rights_t in,
+                                         struct capsicum_rights *out);
+
+/* Removes rights that conflict with the file descriptor type. */
+void cloudabi_remove_conflicting_rights(cloudabi_filetype_t filetype,
+    cloudabi_rights_t *base, cloudabi_rights_t *inheriting);
 
 /*
  * Blocking futex functions.
