@@ -32,6 +32,7 @@ config ARCH_BINFMT_ELF_STATE
 
 config BINFMT_ELF_CLOUDABI
 	bool "Kernel support for CloudABI ELF binaries"
+	depends on CLONEFD && SECURITY_CAPSICUM
 	default n
 	help
 	  CloudABI is a cross-platform binary interface that allows the
