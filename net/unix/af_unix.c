@@ -2808,13 +2808,11 @@ static int unix_shutdown(struct socket *sock, int mode)
 		return -ENOTCONN;
 	}
 	sk->sk_shutdown |= mode;
-	if (other)
-		sock_hold(other);
+	sock_hold(other);
 	unix_state_unlock(sk);
 	sk->sk_state_change(sk);
 
-	if (other &&
-		(sk->sk_type == SOCK_STREAM || sk->sk_type == SOCK_SEQPACKET)) {
+	if (sk->sk_type == SOCK_STREAM || sk->sk_type == SOCK_SEQPACKET) {
 
 		int peer_mode = 0;
 
@@ -2831,8 +2829,7 @@ static int unix_shutdown(struct socket *sock, int mode)
 		else if (peer_mode & RCV_SHUTDOWN)
 			sk_wake_async(other, SOCK_WAKE_WAITD, POLL_IN);
 	}
-	if (other)
-		sock_put(other);
+	sock_put(other);
 
 	return 0;
 }
