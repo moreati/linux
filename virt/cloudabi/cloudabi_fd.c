@@ -340,17 +340,19 @@ cloudabi_errno_t cloudabi_sys_fd_replace(
 	struct file *file;
 	int err = -EBADF;
 
-	if (uap->to == uap->from) {
+	if (uap->from == uap->to) {
 		rcu_read_lock();
-		if (fcheck_files(files, uap->from))
+		if (fcheck_files(files, uap->from) != NULL)
 			err = 0;
 		rcu_read_unlock();
 	} else {
 		spin_lock(&files->file_lock);
-		if (uap->to < files->fdtab.max_fds &&
-		    (file = fcheck(uap->from)) != NULL)
+		if ((file = fcheck_files(files, uap->from)) != NULL &&
+		    fcheck_files(files, uap->to) != NULL) {
 			err = do_dup2(files, file, uap->to, 0);
-		spin_unlock(&files->file_lock);
+		} else {
+			spin_unlock(&files->file_lock);
+		}
 	}
 	return err >= 0 ? 0 : cloudabi_convert_errno(err);
 }
