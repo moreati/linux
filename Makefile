@@ -1,7 +1,7 @@
 VERSION = 4
 PATCHLEVEL = 5
 SUBLEVEL = 0
-EXTRAVERSION = -rc1-capsicum
+EXTRAVERSION = -rc1-cloudabi
 NAME = Blurry Fish Butt
 
 # *DOCUMENTATION*
