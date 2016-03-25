@@ -26,7 +26,7 @@
 #ifndef CLOUDABI_UTIL_H
 #define CLOUDABI_UTIL_H
 
-#include "cloudabi_syscalldefs.h"
+#include "cloudabi_types_common.h"
 
 struct capsicum_rights;
 struct file;

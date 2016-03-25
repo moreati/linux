@@ -31,8 +31,8 @@
 
 #include <net/sock.h>
 
-#include "cloudabi_syscalldefs.h"
 #include "cloudabi_syscalls.h"
+#include "cloudabi_types_common.h"
 #include "cloudabi_util.h"
 
 static void cloudabi_convert_sockaddr(const struct sockaddr_storage *ss,
@@ -85,7 +85,7 @@ int create_sockstat(struct socket *sock, void __user *buf,
 
 	/* Fill ss_state. */
 	if (sock->sk->sk_state == TCP_LISTEN)
-		ss.ss_state |= CLOUDABI_SOCKSTAT_ACCEPTCONN;
+		ss.ss_state |= CLOUDABI_SOCKSTATE_ACCEPTCONN;
 	return copy_to_user(buf, &ss, sizeof(ss)) != 0 ? -EFAULT : 0;
 }
 

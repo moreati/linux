@@ -20,8 +20,8 @@
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
 
-#include "cloudabi_syscalldefs.h"
 #include "cloudabi_syscalls.h"
+#include "cloudabi_types_common.h"
 #include "cloudabi_util.h"
 
 cloudabi_errno_t cloudabi_sys_file_advise(
@@ -130,12 +130,12 @@ cloudabi_errno_t cloudabi_sys_file_link(
 	int how = 0;
 	int error;
 
-	if (uap->fd1 & CLOUDABI_LOOKUP_SYMLINK_FOLLOW)
+	if (uap->fd1.flags & CLOUDABI_LOOKUP_SYMLINK_FOLLOW)
 		how |= LOOKUP_FOLLOW;
 	cap_rights_init(&rights, CAP_LINKAT_TARGET);
 retry:
-	error = user_path_at_fixed_length(uap->fd1, uap->path1, uap->path1len,
-	    how, &old_path, CAP_LINKAT_SOURCE);
+	error = user_path_at_fixed_length(uap->fd1.fd, uap->path1,
+	    uap->path1len, how, &old_path, CAP_LINKAT_SOURCE);
 	if (error != 0)
 		return cloudabi_convert_errno(error);
 
@@ -212,7 +212,7 @@ cloudabi_errno_t cloudabi_sys_file_open(
 #undef COPY_FLAG
 	if (fds.fs_flags & (CLOUDABI_FDFLAG_SYNC | CLOUDABI_FDFLAG_RSYNC))
 		flags |= O_SYNC;
-	if ((uap->fd & CLOUDABI_LOOKUP_SYMLINK_FOLLOW) == 0)
+	if ((uap->fd.flags & CLOUDABI_LOOKUP_SYMLINK_FOLLOW) == 0)
 		flags |= O_NOFOLLOW;
 
 	/* Convert rights to corresponding access mode. */
@@ -232,7 +232,7 @@ cloudabi_errno_t cloudabi_sys_file_open(
 		put_unused_fd(fd);
 		return cloudabi_convert_errno(PTR_ERR(name));
 	}
-	file = file_open_name(uap->fd, name, flags, 0777);
+	file = file_open_name(uap->fd.fd, name, flags, 0777);
 	putname(name);
 	if (IS_ERR(file)) {
 		put_unused_fd(fd);
@@ -723,10 +723,10 @@ cloudabi_errno_t cloudabi_sys_file_stat_get(
 	unsigned int lookup_flags;
 	int error;
 
-	lookup_flags = (uap->fd & CLOUDABI_LOOKUP_SYMLINK_FOLLOW) != 0 ?
+	lookup_flags = (uap->fd.flags & CLOUDABI_LOOKUP_SYMLINK_FOLLOW) != 0 ?
 	    LOOKUP_FOLLOW : 0;
 retry:
-	error = user_path_at_fixed_length(uap->fd, uap->path, uap->pathlen,
+	error = user_path_at_fixed_length(uap->fd.fd, uap->path, uap->pathlen,
 	    lookup_flags, &path, CAP_FSTATAT);
 	if (error != 0)
 		return cloudabi_convert_errno(error);
@@ -767,10 +767,10 @@ cloudabi_errno_t cloudabi_sys_file_stat_put(
 		return CLOUDABI_EFAULT;
 	convert_utimens_arguments(&fs, uap->flags, ts);
 
-	if (uap->fd & CLOUDABI_LOOKUP_SYMLINK_FOLLOW)
+	if (uap->fd.flags & CLOUDABI_LOOKUP_SYMLINK_FOLLOW)
 		lookup_flags |= LOOKUP_FOLLOW;
 retry:
-	error = user_path_at_fixed_length(uap->fd, uap->path, uap->pathlen,
+	error = user_path_at_fixed_length(uap->fd.fd, uap->path, uap->pathlen,
 	    lookup_flags, &path, CAP_FUTIMESAT);
 	if (error)
 		goto out;

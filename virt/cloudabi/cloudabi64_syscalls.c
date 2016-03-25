@@ -89,6 +89,6 @@ const cloudabi_syscall_t cloudabi64_syscalls[] = {
 
 	(cloudabi_syscall_t)cloudabi_sys_enosys,
 };
-static_assert(
+_Static_assert(
     sizeof(cloudabi64_syscalls) / sizeof(cloudabi64_syscalls[0]) == 57 + 1,
     "Invalid system call table size");

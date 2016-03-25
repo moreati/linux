@@ -23,24 +23,25 @@
  * SUCH DAMAGE.
  */
 
+#include <linux/stddef.h>
 #include <linux/syscalls.h>
 #include <linux/uio.h>
 
 #include "cloudabi_util.h"
 #include "cloudabi64_syscalls.h"
 
-static_assert(sizeof(cloudabi64_ciovec_t) == sizeof(struct iovec),
+_Static_assert(sizeof(cloudabi64_ciovec_t) == sizeof(struct iovec),
     "Size mismatch");
-static_assert(offsetof(cloudabi64_ciovec_t, iov_base) ==
+_Static_assert(offsetof(cloudabi64_ciovec_t, iov_base) ==
     offsetof(struct iovec, iov_base), "Offset mismatch");
-static_assert(offsetof(cloudabi64_ciovec_t, iov_len) ==
+_Static_assert(offsetof(cloudabi64_ciovec_t, iov_len) ==
     offsetof(struct iovec, iov_len), "Offset mismatch");
 
-static_assert(sizeof(cloudabi64_iovec_t) == sizeof(struct iovec),
+_Static_assert(sizeof(cloudabi64_iovec_t) == sizeof(struct iovec),
     "Size mismatch");
-static_assert(offsetof(cloudabi64_iovec_t, iov_base) ==
+_Static_assert(offsetof(cloudabi64_iovec_t, iov_base) ==
     offsetof(struct iovec, iov_base), "Offset mismatch");
-static_assert(offsetof(cloudabi64_iovec_t, iov_len) ==
+_Static_assert(offsetof(cloudabi64_iovec_t, iov_len) ==
     offsetof(struct iovec, iov_len), "Offset mismatch");
 
 /* Extracts the top bits from the offset if long is smaller than 64 bits. */

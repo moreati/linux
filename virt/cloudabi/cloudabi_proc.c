@@ -32,8 +32,8 @@
 #include <linux/syscalls.h>
 #include <linux/tsacct_kern.h>
 
-#include "cloudabi_syscalldefs.h"
 #include "cloudabi_syscalls.h"
+#include "cloudabi_types_common.h"
 #include "cloudabi_util.h"
 
 /* Converts CloudABI's signal numbers to Linux's. */

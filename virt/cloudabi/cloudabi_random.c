@@ -25,8 +25,8 @@
 
 #include <linux/syscalls.h>
 
-#include "cloudabi_syscalldefs.h"
 #include "cloudabi_syscalls.h"
+#include "cloudabi_types_common.h"
 #include "cloudabi_util.h"
 
 cloudabi_errno_t cloudabi_sys_random_get(

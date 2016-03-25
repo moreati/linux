@@ -26,8 +26,8 @@
 #ifndef CLOUDABI64_SYSCALLS_H
 #define CLOUDABI64_SYSCALLS_H
 
-#include "cloudabi_syscalldefs.h"
-#include "cloudabi64_syscalldefs.h"
+#include "cloudabi_types_common.h"
+#include "cloudabi64_types.h"
 
 /*
  * System calls that depend on 64-bit types and data structures.
@@ -48,29 +48,29 @@
 struct cloudabi64_sys_fd_pread_args {
 	ARG(cloudabi_fd_t, fd);
 	ARG(const struct cloudabi64_iovec_t __user *, iov);
-	ARG(cloudabi64_size_t, iovlen);
+	ARG(size_t, iovlen);
 	ARG(cloudabi_filesize_t, offset);
 };
 struct cloudabi64_sys_fd_pwrite_args {
 	ARG(cloudabi_fd_t, fd);
 	ARG(const struct cloudabi64_ciovec_t __user *, iov);
-	ARG(cloudabi64_size_t, iovlen);
+	ARG(size_t, iovlen);
 	ARG(cloudabi_filesize_t, offset);
 };
 struct cloudabi64_sys_fd_read_args {
 	ARG(cloudabi_fd_t, fd);
 	ARG(const struct cloudabi64_iovec_t __user *, iov);
-	ARG(cloudabi64_size_t, iovlen);
+	ARG(size_t, iovlen);
 };
 struct cloudabi64_sys_fd_write_args {
 	ARG(cloudabi_fd_t, fd);
 	ARG(const struct cloudabi64_ciovec_t __user *, iov);
-	ARG(cloudabi64_size_t, iovlen);
+	ARG(size_t, iovlen);
 };
 struct cloudabi64_sys_poll_args {
 	ARG(const cloudabi64_subscription_t __user *, in);
 	ARG(cloudabi64_event_t __user *, out);
-	ARG(cloudabi64_size_t, nevents);
+	ARG(size_t, nevents);
 };
 struct cloudabi64_sys_sock_recv_args {
 	ARG(cloudabi_fd_t, s);

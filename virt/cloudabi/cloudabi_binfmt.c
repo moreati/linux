@@ -21,7 +21,7 @@
 #include <asm/uaccess.h>
 
 #include "cloudabi_util.h"
-#include "cloudabi64_syscalldefs.h"
+#include "cloudabi64_types.h"
 
 #if ELF_EXEC_PAGESIZE > PAGE_SIZE
 #define ELF_MIN_ALIGN	ELF_EXEC_PAGESIZE

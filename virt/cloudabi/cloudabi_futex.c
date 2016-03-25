@@ -33,8 +33,8 @@
 #include <asm/futex.h>
 #include <asm/uaccess.h>
 
-#include "cloudabi_syscalldefs.h"
 #include "cloudabi_syscalls.h"
+#include "cloudabi_types_common.h"
 #include "cloudabi_util.h"
 
 /*

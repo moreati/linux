@@ -26,7 +26,7 @@
 #ifndef CLOUDABI_SYSCALLS_H
 #define CLOUDABI_SYSCALLS_H
 
-#include "cloudabi_syscalldefs.h"
+#include "cloudabi_types_common.h"
 
 /*
  * Structures with system call arguments.

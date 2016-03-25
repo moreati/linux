@@ -26,7 +26,7 @@
 #include <linux/sched.h>
 #include <linux/uaccess.h>
 
-#include "cloudabi_syscalldefs.h"
+#include "cloudabi_types_common.h"
 #include "cloudabi_util.h"
 #include "cloudabi64_syscalls.h"
 

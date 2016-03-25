@@ -27,8 +27,8 @@
 #include <linux/time.h>
 #include <linux/timekeeping.h>
 
-#include "cloudabi_syscalldefs.h"
 #include "cloudabi_syscalls.h"
+#include "cloudabi_types_common.h"
 #include "cloudabi_util.h"
 
 /* Converts a CloudABI clock ID to a Linux clock ID. */
