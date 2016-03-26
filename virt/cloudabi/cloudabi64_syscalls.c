@@ -30,11 +30,11 @@
 #include "cloudabi_syscalls.h"
 #include "cloudabi64_syscalls.h"
 
-#define PAD(type) \
-    ((sizeof(uint64_t) - (sizeof(type) % sizeof(uint64_t))) % sizeof(uint64_t))
 #ifdef __LITTLE_ENDIAN
 #define MEMBER(type, name) _Alignas(8) type name
 #else
+#define PAD(type) \
+    ((sizeof(uint64_t) - (sizeof(type) % sizeof(uint64_t))) % sizeof(uint64_t))
 #define MEMBER(type, name) char name##_pad[PAD(type)]; type name
 #endif
 
