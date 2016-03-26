@@ -30,16 +30,17 @@
 #include "cloudabi_util.h"
 #include "cloudabi64_syscalls.h"
 
-cloudabi_errno_t cloudabi64_sys_thread_create(
-    const struct cloudabi64_sys_thread_create_args *uap, unsigned long *retval)
+cloudabi_errno_t
+cloudabi64_sys_thread_create(cloudabi64_threadattr_t __user *attr,
+    cloudabi_tid_t *tid)
 {
-	cloudabi64_threadattr_t attr;
+	cloudabi64_threadattr_t kattr;
 	struct clone4_args clone4_args = {};
 	struct pt_regs *regs;
 	struct task_struct *child;
-	cloudabi_tid_t tid;
+	cloudabi_tid_t newtid;
 
-	if (copy_from_user(&attr, uap->attr, sizeof(attr)) != 0)
+	if (copy_from_user(&kattr, attr, sizeof(kattr)) != 0)
 		return CLOUDABI_EFAULT;
 
 	/* Create a new thread. */
@@ -47,16 +48,16 @@ cloudabi_errno_t cloudabi64_sys_thread_create(
 	    CLONE_THREAD, &clone4_args, NULL, 0, NULL);
 	if (IS_ERR(child))
 		return cloudabi_convert_errno(PTR_ERR(child));
-	tid = cloudabi_gettid(child);
+	newtid = cloudabi_gettid(child);
 
 	/* Set initial registers. */
 	regs = task_pt_regs(child);
 #ifdef __x86_64__
 	/* TODO(ed): This should be solved more elegantly. */
-	regs->sp = rounddown(attr.stack + attr.stack_size, 16) - 8;
-	regs->ip = attr.entry_point;
-	regs->di = tid;
-	regs->si = attr.argument;
+	regs->sp = rounddown(kattr.stack + kattr.stack_size, 16) - 8;
+	regs->ip = kattr.entry_point;
+	regs->di = newtid;
+	regs->si = kattr.argument;
 #else
 #error "Unknown architecture"
 #endif
@@ -64,6 +65,6 @@ cloudabi_errno_t cloudabi64_sys_thread_create(
 	/* Start execution of new thread. */
 	wake_up_new_task(child);
 
-	retval[0] = tid;
+	*tid = newtid;
 	return 0;
 }

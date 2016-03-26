@@ -33,30 +33,23 @@
 #include "cloudabi_types_common.h"
 #include "cloudabi_util.h"
 
-cloudabi_errno_t cloudabi_sys_thread_exit(
-    const struct cloudabi_sys_thread_exit_args *uap, unsigned long *retval)
+void cloudabi_sys_thread_exit(cloudabi_lock_t __user *lock,
+    cloudabi_mflags_t scope)
 {
-	struct cloudabi_sys_lock_unlock_args cloudabi_sys_lock_unlock_args = {
-		.lock = uap->lock,
-		.scope = uap->scope,
-	};
-
         /* Wake up joining thread. */
-	cloudabi_sys_lock_unlock(&cloudabi_sys_lock_unlock_args, NULL);
+	cloudabi_sys_lock_unlock(lock, scope);
 
         /* Terminate the thread. */
-	return cloudabi_convert_errno(sys_exit(0));
+	sys_exit(0);
 }
 
-cloudabi_errno_t cloudabi_sys_thread_tcb_set(
-    const struct cloudabi_sys_thread_tcb_set_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_thread_tcb_set(void __user *tcb)
 {
 	return cloudabi_convert_errno(
-	    do_arch_prctl(current, ARCH_SET_FS, (unsigned long)uap->tcb));
+	    do_arch_prctl(current, ARCH_SET_FS, (unsigned long)tcb));
 }
 
-cloudabi_errno_t cloudabi_sys_thread_yield(
-    const void *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_thread_yield(void)
 {
 	return cloudabi_convert_errno(sys_sched_yield());
 }

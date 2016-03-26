@@ -86,8 +86,9 @@ static bool do_pdwait(const cloudabi64_subscription_t *sub,
 	return error != -EAGAIN;
 }
 
-cloudabi_errno_t cloudabi64_sys_poll(
-    const struct cloudabi64_sys_poll_args *uap, unsigned long *retval)
+cloudabi_errno_t
+cloudabi64_sys_poll(const cloudabi64_subscription_t __user *in,
+    cloudabi64_event_t __user *out, size_t nsubscriptions, size_t *nevents)
 {
 	enum hrtimer_mode mode;
 	struct timespec ts;
@@ -99,11 +100,11 @@ cloudabi_errno_t cloudabi64_sys_poll(
 	 * Bandaid to support CloudABI futex constructs.
 	 */
 	task = current;
-	if (uap->nevents == 1) {
+	if (nsubscriptions == 1) {
 		cloudabi64_subscription_t sub;
 		cloudabi64_event_t ev = {};
 
-		if (copy_from_user(&sub, uap->in, sizeof(sub)) != 0)
+		if (copy_from_user(&sub, in, sizeof(sub)) != 0)
 			return CLOUDABI_EFAULT;
 		ev.userdata = sub.userdata;
 		ev.type = sub.type;
@@ -120,8 +121,8 @@ cloudabi_errno_t cloudabi64_sys_poll(
 				    clockid);
 			}
 			ev.error = cloudabi_convert_errno(error);
-			retval[0] = 1;
-			return copy_to_user(uap->out, &ev, sizeof(ev)) != 0 ?
+			*nevents = 1;
+			return copy_to_user(out, &ev, sizeof(ev)) != 0 ?
 			    CLOUDABI_EFAULT : 0;
 		} else if (sub.type == CLOUDABI_EVENTTYPE_CONDVAR) {
 			/* Wait on a condition variable. */
@@ -132,8 +133,8 @@ cloudabi_errno_t cloudabi64_sys_poll(
 			        (cloudabi_lock_t *)sub.condvar.lock,
 			        sub.condvar.lock_scope,
 			        CLOUDABI_CLOCK_MONOTONIC, UINT64_MAX, 0));
-			retval[0] = 1;
-			return copy_to_user(uap->out, &ev, sizeof(ev)) != 0 ?
+			*nevents = 1;
+			return copy_to_user(out, &ev, sizeof(ev)) != 0 ?
 			    CLOUDABI_EFAULT : 0;
 		} else if (sub.type == CLOUDABI_EVENTTYPE_LOCK_RDLOCK) {
 			/* Acquire a read lock. */
@@ -142,8 +143,8 @@ cloudabi_errno_t cloudabi64_sys_poll(
 			        task, (cloudabi_lock_t *)sub.lock.lock,
 			        sub.lock.lock_scope, CLOUDABI_CLOCK_MONOTONIC,
 			        UINT64_MAX, 0));
-			retval[0] = 1;
-			return copy_to_user(uap->out, &ev, sizeof(ev)) != 0 ?
+			*nevents = 1;
+			return copy_to_user(out, &ev, sizeof(ev)) != 0 ?
 			    CLOUDABI_EFAULT : 0;
 		} else if (sub.type == CLOUDABI_EVENTTYPE_LOCK_WRLOCK) {
 			/* Acquire a write lock. */
@@ -152,21 +153,21 @@ cloudabi_errno_t cloudabi64_sys_poll(
 			        task, (cloudabi_lock_t *)sub.lock.lock,
 			        sub.lock.lock_scope, CLOUDABI_CLOCK_MONOTONIC,
 			        UINT64_MAX, 0));
-			retval[0] = 1;
-			return copy_to_user(uap->out, &ev, sizeof(ev)) != 0 ?
+			*nevents = 1;
+			return copy_to_user(out, &ev, sizeof(ev)) != 0 ?
 			    CLOUDABI_EFAULT : 0;
 		} else if (sub.type == CLOUDABI_EVENTTYPE_PROC_TERMINATE) {
 			/* Wait for process termination. */
 			do_pdwait(&sub, &ev, false);
-			retval[0] = 1;
-			return copy_to_user(uap->out, &ev, sizeof(ev)) != 0 ?
+			*nevents = 1;
+			return copy_to_user(out, &ev, sizeof(ev)) != 0 ?
 			    CLOUDABI_EFAULT : 0;
 		}
-	} else if (uap->nevents == 2) {
+	} else if (nsubscriptions == 2) {
 		cloudabi64_subscription_t sub[2];
 		cloudabi64_event_t ev[2] = {};
 
-		if (copy_from_user(&sub, uap->in, sizeof(sub)) != 0)
+		if (copy_from_user(&sub, in, sizeof(sub)) != 0)
 			return CLOUDABI_EFAULT;
 		ev[0].userdata = sub[0].userdata;
 		ev[0].type = sub[0].type;
@@ -184,14 +185,14 @@ cloudabi_errno_t cloudabi64_sys_poll(
 			    sub[1].clock.precision);
 			if (error == -ETIMEDOUT) {
 				ev[1].error = 0;
-				retval[0] = 1;
-				return copy_to_user(uap->out, &ev[1],
+				*nevents = 1;
+				return copy_to_user(out, &ev[1],
 				    sizeof(ev[1])) != 0 ? CLOUDABI_EFAULT : 0;
 			}
 
 			ev[0].error = cloudabi_convert_errno(error);
-			retval[0] = 1;
-			return copy_to_user(uap->out, &ev[0],
+			*nevents = 1;
+			return copy_to_user(out, &ev[0],
 			    sizeof(ev[0])) != 0 ? CLOUDABI_EFAULT : 0;
 		} else if (sub[0].type == CLOUDABI_EVENTTYPE_LOCK_RDLOCK &&
 		    sub[1].type == CLOUDABI_EVENTTYPE_CLOCK) {
@@ -202,14 +203,14 @@ cloudabi_errno_t cloudabi64_sys_poll(
 			    sub[1].clock.timeout, sub[1].clock.precision);
 			if (error == -ETIMEDOUT) {
 				ev[1].error = 0;
-				retval[0] = 1;
-				return copy_to_user(uap->out, &ev[1],
+				*nevents = 1;
+				return copy_to_user(out, &ev[1],
 				    sizeof(ev[1])) != 0 ? CLOUDABI_EFAULT : 0;
 			}
 
 			ev[0].error = cloudabi_convert_errno(error);
-			retval[0] = 1;
-			return copy_to_user(uap->out, &ev[0],
+			*nevents = 1;
+			return copy_to_user(out, &ev[0],
 			    sizeof(ev[0])) != 0 ? CLOUDABI_EFAULT : 0;
 		} else if (sub[0].type == CLOUDABI_EVENTTYPE_LOCK_WRLOCK &&
 		    sub[1].type == CLOUDABI_EVENTTYPE_CLOCK) {
@@ -220,14 +221,14 @@ cloudabi_errno_t cloudabi64_sys_poll(
 			    sub[1].clock.timeout, sub[1].clock.precision);
 			if (error == -ETIMEDOUT) {
 				ev[1].error = 0;
-				retval[0] = 1;
-				return copy_to_user(uap->out, &ev[1],
+				*nevents = 1;
+				return copy_to_user(out, &ev[1],
 				    sizeof(ev[1])) != 0 ? CLOUDABI_EFAULT : 0;
 			}
 
 			ev[0].error = cloudabi_convert_errno(error);
-			retval[0] = 1;
-			return copy_to_user(uap->out, &ev[0],
+			*nevents = 1;
+			return copy_to_user(out, &ev[0],
 			    sizeof(ev[0])) != 0 ? CLOUDABI_EFAULT : 0;
 		} else if (sub[0].type == CLOUDABI_EVENTTYPE_PROC_TERMINATE &&
 		    sub[1].type == CLOUDABI_EVENTTYPE_CLOCK &&
@@ -235,16 +236,25 @@ cloudabi_errno_t cloudabi64_sys_poll(
 			/* Wait for process termination. */
 			if (!do_pdwait(&sub[0], &ev[0], true)) {
 				ev[1].error = 0;
-				retval[0] = 1;
-				return copy_to_user(uap->out, &ev[1],
+				*nevents = 1;
+				return copy_to_user(out, &ev[1],
 				    sizeof(ev[1])) != 0 ? CLOUDABI_EFAULT : 0;
 			}
 
-			retval[0] = 1;
-			return copy_to_user(uap->out, &ev, sizeof(ev)) != 0 ?
+			*nevents = 1;
+			return copy_to_user(out, &ev, sizeof(ev)) != 0 ?
 			    CLOUDABI_EFAULT : 0;
 		}
 	}
 
+	return CLOUDABI_ENOSYS;
+}
+
+cloudabi_errno_t cloudabi64_sys_poll_fd(cloudabi_fd_t fd,
+    const cloudabi64_subscription_t __user *in, size_t nin,
+    cloudabi64_event_t __user *out, size_t nout,
+    const cloudabi64_subscription_t __user *timeout, size_t *nevents)
+{
+	/* TODO(ed): Implement. */
 	return CLOUDABI_ENOSYS;
 }

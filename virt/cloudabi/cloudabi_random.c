@@ -29,13 +29,12 @@
 #include "cloudabi_types_common.h"
 #include "cloudabi_util.h"
 
-cloudabi_errno_t cloudabi_sys_random_get(
-    const struct cloudabi_sys_random_get_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_random_get(void __user *buf, size_t nbyte)
 {
-	long nbytes;
+	long copied;
 
-	nbytes = sys_getrandom(uap->buf, uap->nbyte, 0);
-	if (nbytes < 0)
-		return cloudabi_convert_errno(nbytes);
+	copied = sys_getrandom(buf, nbyte, 0);
+	if (copied < 0)
+		return cloudabi_convert_errno(copied);
 	return 0;
 }

@@ -1141,17 +1141,14 @@ cloudabi_futex_lock_wrlock(struct task_struct *td, cloudabi_lock_t *lock,
  * Non-blocking calls: releasing locks, signalling condition variables.
  */
 
-cloudabi_errno_t
-cloudabi_sys_condvar_signal(const struct cloudabi_sys_condvar_signal_args *uap,
-    unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_condvar_signal(cloudabi_condvar_t __user *condvar,
+    cloudabi_mflags_t scope, cloudabi_nthreads_t nwaiters)
 {
 	struct futex_condvar *fc;
 	struct futex_lock *fl;
 	struct task_struct *td;
-	cloudabi_nthreads_t nwaiters;
 	int error;
 
-	nwaiters = uap->nwaiters;
 	if (nwaiters == 0) {
 		/* No threads to wake up. */
 		return (0);
@@ -1159,7 +1156,7 @@ cloudabi_sys_condvar_signal(const struct cloudabi_sys_condvar_signal_args *uap,
 
 	/* Look up futex object. */
 	td = current;
-	error = futex_condvar_lookup(td, uap->condvar, uap->scope, &fc);
+	error = futex_condvar_lookup(td, condvar, scope, &fc);
 	if (error != 0) {
 		/* Race condition: condition variable with no waiters. */
 		if (error == -ENOENT)
@@ -1197,24 +1194,23 @@ cloudabi_sys_condvar_signal(const struct cloudabi_sys_condvar_signal_args *uap,
 	}
 
 	/* Clear userspace condition variable if all waiters are gone. */
-	error = futex_condvar_unmanage(fc, uap->condvar);
+	error = futex_condvar_unmanage(fc, condvar);
 	futex_condvar_release(fc);
 	return (cloudabi_convert_errno(error));
 }
 
-cloudabi_errno_t
-cloudabi_sys_lock_unlock(const struct cloudabi_sys_lock_unlock_args *uap,
-    unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_lock_unlock(cloudabi_lock_t __user *lock,
+    cloudabi_mflags_t scope)
 {
 	struct futex_lock *fl;
 	struct task_struct *td;
 	int error;
 
 	td = current;
-	error = futex_lock_lookup(td, uap->lock, uap->scope, &fl);
+	error = futex_lock_lookup(td, lock, scope, &fl);
 	if (error != 0)
 		return (cloudabi_convert_errno(error));
-	error = futex_lock_unlock(fl, td, uap->lock);
+	error = futex_lock_unlock(fl, td, lock);
 	futex_lock_release(fl);
 	return (cloudabi_convert_errno(error));
 }

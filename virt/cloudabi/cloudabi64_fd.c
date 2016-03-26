@@ -51,50 +51,54 @@ _Static_assert(offsetof(cloudabi64_iovec_t, iov_len) ==
 #define TOP_BITS(offset) 0
 #endif
 
-cloudabi_errno_t cloudabi64_sys_fd_pread(
-    const struct cloudabi64_sys_fd_pread_args *uap, unsigned long *retval) {
+cloudabi_errno_t cloudabi64_sys_fd_pread(cloudabi_fd_t fd,
+    const cloudabi64_iovec_t __user *iov, size_t iovcnt,
+    cloudabi_filesize_t offset, size_t *nread)
+{
 	long length;
 
-	length = sys_preadv(uap->fd, (const struct iovec __user *)uap->iov,
-	    uap->iovlen, uap->offset, TOP_BITS(uap->offset));
+	length = sys_preadv(fd, (const struct iovec __user *)iov, iovcnt,
+	    offset, TOP_BITS(offset));
 	if (length < 0)
 		return cloudabi_convert_errno(length);
-	retval[0] = length;
+	*nread = length;
 	return 0;
 }
 
-cloudabi_errno_t cloudabi64_sys_fd_pwrite(
-    const struct cloudabi64_sys_fd_pwrite_args *uap, unsigned long *retval) {
+cloudabi_errno_t cloudabi64_sys_fd_pwrite(cloudabi_fd_t fd,
+    const cloudabi64_ciovec_t __user *iov, size_t iovcnt,
+    cloudabi_filesize_t offset, size_t *nwritten)
+{
 	long length;
 
-	length = sys_pwritev(uap->fd, (const struct iovec __user *)uap->iov,
-	    uap->iovlen, uap->offset, TOP_BITS(uap->offset));
+	length = sys_pwritev(fd, (const struct iovec __user *)iov, iovcnt,
+	    offset, TOP_BITS(offset));
 	if (length < 0)
 		return cloudabi_convert_errno(length);
-	retval[0] = length;
+	*nwritten = length;
 	return 0;
 }
 
-cloudabi_errno_t cloudabi64_sys_fd_read(
-    const struct cloudabi64_sys_fd_read_args *uap, unsigned long *retval) {
+cloudabi_errno_t cloudabi64_sys_fd_read(cloudabi_fd_t fd,
+    const cloudabi64_iovec_t __user *iov, size_t iovcnt, size_t *nread)
+{
 	long length;
 
-	length = sys_readv(uap->fd, (const struct iovec __user *)uap->iov,
-	    uap->iovlen);
+	length = sys_readv(fd, (const struct iovec __user *)iov, iovcnt);
 	if (length < 0)
 		return cloudabi_convert_errno(length);
-	retval[0] = length;
+	*nread = length;
 	return 0;
 }
 
-cloudabi_errno_t cloudabi64_sys_fd_write(
-    const struct cloudabi64_sys_fd_write_args *uap, unsigned long *retval) {
+cloudabi_errno_t cloudabi64_sys_fd_write(cloudabi_fd_t fd,
+    const cloudabi64_ciovec_t __user *iov, size_t iovcnt, size_t *nwritten)
+{
 	long length;
 
-	length = sys_writev(uap->fd, (const struct iovec __user *)uap->iov,
-	    uap->iovlen);
+	length = sys_writev(fd, (const struct iovec __user *)iov, iovcnt);
 	if (length < 0)
 		return cloudabi_convert_errno(length);
-	retval[0] = length;
+	*nwritten = length;
 	return 0;
 }

@@ -53,12 +53,12 @@ convert_mprot(cloudabi_mprot_t in, int *out)
 	return 0;
 }
 
-cloudabi_errno_t cloudabi_sys_mem_advise(
-    const struct cloudabi_sys_mem_advise_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_mem_advise(void __user *addr, size_t len,
+    cloudabi_advice_t advice)
 {
 	int behavior;
 
-	switch (uap->advice) {
+	switch (advice) {
 	case CLOUDABI_ADVICE_DONTNEED:
 		behavior = MADV_DONTNEED;
 		break;
@@ -78,102 +78,99 @@ cloudabi_errno_t cloudabi_sys_mem_advise(
 		return CLOUDABI_EINVAL;
 	}
 	return cloudabi_convert_errno(
-	    sys_madvise((unsigned long)uap->addr, uap->len, behavior));
+	    sys_madvise((unsigned long)addr, len, behavior));
 }
 
-cloudabi_errno_t cloudabi_sys_mem_lock(
-    const struct cloudabi_sys_mem_lock_args *uap, unsigned long *retval)
+cloudabi_errno_t
+cloudabi_sys_mem_lock(const void __user *addr, size_t len)
 {
-	return cloudabi_convert_errno(
-	    sys_mlock((unsigned long)uap->addr, uap->len));
+	return cloudabi_convert_errno(sys_mlock((unsigned long)addr, len));
 }
 
-cloudabi_errno_t cloudabi_sys_mem_map(
-    const struct cloudabi_sys_mem_map_args *uap, unsigned long *retval)
+cloudabi_errno_t
+cloudabi_sys_mem_map(void __user *addr, size_t len, cloudabi_mprot_t prot,
+    cloudabi_mflags_t flags, cloudabi_fd_t fd, cloudabi_filesize_t off,
+    void __user **mem)
 {
 	cloudabi_errno_t error;
-	unsigned long flags;
-	long addr;
-	int prot;
+	unsigned long kflags;
+	long retval;
+	int kprot;
 
 	/* Address needs to be page aligned. */
-	if ((uap->off & ~PAGE_MASK) != 0)
+	if ((off & ~PAGE_MASK) != 0)
 		return CLOUDABI_EINVAL;
 
 	/* Translate flags. */
-	flags = 0;
-	if (uap->flags & CLOUDABI_MAP_ANON) {
-		flags |= MAP_ANONYMOUS;
-		if (uap->fd != CLOUDABI_MAP_ANON_FD)
+	kflags = 0;
+	if (flags & CLOUDABI_MAP_ANON) {
+		kflags |= MAP_ANONYMOUS;
+		if (fd != CLOUDABI_MAP_ANON_FD)
 			return CLOUDABI_EINVAL;
 	}
-	if (uap->flags & CLOUDABI_MAP_FIXED)
-		flags |= MAP_FIXED;
-	if (uap->flags & CLOUDABI_MAP_PRIVATE)
-		flags |= MAP_PRIVATE;
-	if (uap->flags & CLOUDABI_MAP_SHARED)
-		flags |= MAP_SHARED;
+	if (flags & CLOUDABI_MAP_FIXED)
+		kflags |= MAP_FIXED;
+	if (flags & CLOUDABI_MAP_PRIVATE)
+		kflags |= MAP_PRIVATE;
+	if (flags & CLOUDABI_MAP_SHARED)
+		kflags |= MAP_SHARED;
 
-	error = convert_mprot(uap->prot, &prot);
+	error = convert_mprot(prot, &kprot);
 	if (error != 0)
 		return error;
 
-	addr = sys_mmap_pgoff((unsigned long)uap->addr, uap->len, prot, flags,
-	    uap->fd, uap->off);
-	if (addr < 0 && addr >= -MAX_ERRNO)
-		return cloudabi_convert_errno(addr);
-	retval[0] = addr;
+	retval = sys_mmap_pgoff((unsigned long)addr, len, kprot, kflags, fd,
+	    off);
+	if (retval < 0 && retval >= -MAX_ERRNO)
+		return cloudabi_convert_errno(retval);
+	*mem = (void __user *)retval;
 	return 0;
 }
 
-cloudabi_errno_t cloudabi_sys_mem_protect(
-    const struct cloudabi_sys_mem_protect_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_mem_protect(void __user *addr, size_t len,
+    cloudabi_mprot_t prot)
 {
 	cloudabi_errno_t error;
-	int prot;
+	int kprot;
 
-	error = convert_mprot(uap->prot, &prot);
+	error = convert_mprot(prot, &kprot);
 	if (error != 0)
 		return error;
 
-	return cloudabi_convert_errno(sys_mprotect((unsigned long)uap->addr,
-	    uap->len, prot));
+	return cloudabi_convert_errno(
+	    sys_mprotect((unsigned long)addr, len, kprot));
 }
 
-cloudabi_errno_t cloudabi_sys_mem_sync(
-    const struct cloudabi_sys_mem_sync_args *uap, unsigned long *retval)
+cloudabi_errno_t
+cloudabi_sys_mem_sync(void __user *addr, size_t len, cloudabi_msflags_t flags)
 {
-	int flags;
+	int kflags;
 
 	/* Convert flags. */
-	flags = 0;
-	switch (uap->flags & (CLOUDABI_MS_ASYNC | CLOUDABI_MS_SYNC)) {
+	kflags = 0;
+	switch (flags & (CLOUDABI_MS_ASYNC | CLOUDABI_MS_SYNC)) {
 	case CLOUDABI_MS_ASYNC:
-		flags |= MS_ASYNC;
+		kflags |= MS_ASYNC;
 		break;
 	case CLOUDABI_MS_SYNC:
-		flags |= MS_SYNC;
+		kflags |= MS_SYNC;
 		break;
 	default:
 		return CLOUDABI_EINVAL;
 	}
-	if ((uap->flags & CLOUDABI_MS_INVALIDATE) != 0)
-		flags |= MS_INVALIDATE;
+	if ((flags & CLOUDABI_MS_INVALIDATE) != 0)
+		kflags |= MS_INVALIDATE;
 
 	return cloudabi_convert_errno(
-	    sys_msync((unsigned long)uap->addr, uap->len, flags));
+	    sys_msync((unsigned long)addr, len, kflags));
 }
 
-cloudabi_errno_t cloudabi_sys_mem_unlock(
-    const struct cloudabi_sys_mem_unlock_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_mem_unlock(const void __user *addr, size_t len)
 {
-	return cloudabi_convert_errno(
-	    sys_munlock((unsigned long)uap->addr, uap->len));
+	return cloudabi_convert_errno(sys_munlock((unsigned long)addr, len));
 }
 
-cloudabi_errno_t cloudabi_sys_mem_unmap(
-    const struct cloudabi_sys_mem_unmap_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_mem_unmap(void __user *addr, size_t len)
 {
-	return cloudabi_convert_errno(
-	    sys_munmap((unsigned long)uap->addr, uap->len));
+	return cloudabi_convert_errno(sys_munmap((unsigned long)addr, len));
 }

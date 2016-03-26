@@ -116,7 +116,3 @@ cloudabi_errno_t cloudabi_convert_errno(int error) {
 		return (error == 0 ? 0 : CLOUDABI_ENOSYS);
 	return table[error];
 }
-
-cloudabi_errno_t cloudabi_sys_enosys(const void *uap, unsigned long *retval) {
-	return CLOUDABI_ENOSYS;
-}

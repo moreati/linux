@@ -168,8 +168,9 @@ out:
 	return ret;
 }
 
-cloudabi_errno_t cloudabi_sys_proc_exec(
-    const struct cloudabi_sys_proc_exec_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_proc_exec(cloudabi_fd_t fd,
+    const void __user *data, size_t datalen, const cloudabi_fd_t __user *fds,
+    size_t fdslen)
 {
 	struct file *file;
 	struct files_struct *old_files, *new_files;
@@ -185,21 +186,21 @@ cloudabi_errno_t cloudabi_sys_proc_exec(
 	 * than the existing one.
 	 */
 	old_files = current->files;
-	if (uap->fdslen > old_files->fdtab.max_fds)
+	if (fdslen > old_files->fdtab.max_fds)
 		return CLOUDABI_EINVAL;
 
 	/*
 	 * Construct a new file descriptor table that has some of the
 	 * original file descriptors remapped to a provided layout.
 	 */
-	new_fds = kmalloc(sizeof(int) * uap->fdslen, GFP_KERNEL);
+	new_fds = kmalloc(sizeof(int) * fdslen, GFP_KERNEL);
 	if (new_fds == NULL)
 		return CLOUDABI_ENOMEM;
-	if (copy_from_user(new_fds, uap->fds, sizeof(int) * uap->fdslen)) {
+	if (copy_from_user(new_fds, fds, sizeof(int) * fdslen)) {
 		kfree(new_fds);
 		return CLOUDABI_EFAULT;
 	}
-	new_files = remap_files_struct(old_files, new_fds, uap->fdslen, &error);
+	new_files = remap_files_struct(old_files, new_fds, fdslen, &error);
 	kfree(new_fds);
 	if (new_files == NULL)
 		return cloudabi_convert_errno(error);
@@ -233,14 +234,14 @@ cloudabi_errno_t cloudabi_sys_proc_exec(
 	check_unsafe_exec(bprm);
 	current->in_execve = 1;
 
-	file = do_open_execat(uap->fd, filename, AT_EMPTY_PATH);
+	file = do_open_execat(fd, filename, AT_EMPTY_PATH);
 	error = PTR_ERR(file);
 	if (IS_ERR(file))
 		goto out_unmark;
 
 	sched_exec();
 	bprm->file = file;
-	pathbuf = kasprintf(GFP_TEMPORARY, "/dev/fd/%u", uap->fd);
+	pathbuf = kasprintf(GFP_TEMPORARY, "/dev/fd/%u", fd);
 	if (pathbuf == NULL) {
 		error = -ENOMEM;
 		goto out_unmark;
@@ -264,7 +265,7 @@ cloudabi_errno_t cloudabi_sys_proc_exec(
 	bprm->exec = bprm->p;
 
 	/* Copy argument data to the new process. */
-	error = copy_argdata(bprm, uap->data, uap->datalen);
+	error = copy_argdata(bprm, data, datalen);
 	if (error != 0)
 		goto out;
 
@@ -305,21 +306,19 @@ out_files:
 	return cloudabi_convert_errno(error);
 }
 
-cloudabi_errno_t cloudabi_sys_proc_exit(
-    const struct cloudabi_sys_proc_exit_args *uap, unsigned long *retval)
+void cloudabi_sys_proc_exit(cloudabi_exitcode_t rval)
 {
-	return cloudabi_convert_errno(sys_exit_group(uap->rval));
+	sys_exit_group(rval);
 }
 
-cloudabi_errno_t cloudabi_sys_proc_fork(
-    const void *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_proc_fork(cloudabi_fd_t *fd, cloudabi_tid_t *tid)
 {
 	struct capsicum_rights rights;
 	struct clone4_args clone4_args = {};
 	struct clonefd_setup clonefd_setup = {};
 	struct pt_regs *regs;
 	struct task_struct *child;
-	cloudabi_tid_t tid;
+	cloudabi_tid_t newtid;
 
 	/* Create a new process. */
 	cap_rights_init(&rights, CAP_FSTAT, CAP_PDWAIT);
@@ -327,13 +326,13 @@ cloudabi_errno_t cloudabi_sys_proc_fork(
 	child = copy_process(CLONE_FD, &clone4_args, NULL, 0, &clonefd_setup);
 	if (IS_ERR(child))
 		return cloudabi_convert_errno(PTR_ERR(child));
-	tid = cloudabi_gettid(child);
+	newtid = cloudabi_gettid(child);
 
 	/* Return the new thread ID to the child process. */
 	regs = task_pt_regs(child);
 #ifdef __x86_64__
 	regs->ax = CLOUDABI_PROCESS_CHILD;
-	regs->dx = tid;
+	regs->dx = newtid;
 #else
 #error "Unknown architecture"
 #endif
@@ -343,17 +342,16 @@ cloudabi_errno_t cloudabi_sys_proc_fork(
 	wake_up_new_task(child);
 
 	/* Return the new file descriptor to the parent process. */
-	retval[0] = clonefd_setup.fd;
+	*fd = clonefd_setup.fd;
 	return 0;
 }
 
-cloudabi_errno_t cloudabi_sys_proc_raise(
-    const struct cloudabi_sys_proc_raise_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_proc_raise(cloudabi_signal_t sig)
 {
 	int signum;
 	cloudabi_errno_t error;
 
-	error = convert_signal(uap->sig, &signum);
+	error = convert_signal(sig, &signum);
 	if (error != 0)
 		return error;
 	return cloudabi_convert_errno(sys_kill(task_tgid_vnr(current), signum));

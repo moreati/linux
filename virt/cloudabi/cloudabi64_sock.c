@@ -36,8 +36,8 @@
 #include "cloudabi_util.h"
 #include "cloudabi64_syscalls.h"
 
-cloudabi_errno_t cloudabi64_sys_sock_recv(
-    const struct cloudabi64_sys_sock_recv_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi64_sys_sock_recv(cloudabi_fd_t sock,
+    const cloudabi64_recv_in_t __user *in, cloudabi64_recv_out_t __user *out)
 {
 	struct capsicum_rights rights;
 	struct fd f_sock;
@@ -46,19 +46,19 @@ cloudabi_errno_t cloudabi64_sys_sock_recv(
 	cloudabi64_recv_out_t ro = {};
 	struct iovec iovstack[UIO_FASTIOV];
 	struct iovec *iov = iovstack;
-	struct socket *sock;
+	struct socket *sk;
 	int error;
 
-	if (copy_from_user(&ri, uap->in, sizeof(ri)) != 0)
+	if (copy_from_user(&ri, in, sizeof(ri)) != 0)
 		return CLOUDABI_EFAULT;
 
 	/* Obtain socket. */
 	cap_rights_init(&rights, CAP_RECV);
-	f_sock = fdget_raw_rights(uap->s, &rights);
+	f_sock = fdget_raw_rights(sock, &rights);
 	if (IS_ERR(f_sock.file))
 		return cloudabi_convert_errno(PTR_ERR(f_sock.file));
-	sock = sock_from_file(f_sock.file, &error);
-	if (sock == NULL)
+	sk = sock_from_file(f_sock.file, &error);
+	if (sk == NULL)
 		goto out;
 
 	/* Process ri_data and ri_datalen. */
@@ -73,16 +73,15 @@ cloudabi_errno_t cloudabi64_sys_sock_recv(
 		msg.msg_flags |= MSG_PEEK;
 	if (ri.ri_flags & CLOUDABI_MSG_WAITALL)
 		msg.msg_flags |= MSG_WAITALL;
-	if (sock->file->f_flags & O_NONBLOCK)
+	if (sk->file->f_flags & O_NONBLOCK)
 		msg.msg_flags |= MSG_DONTWAIT;
 
 	/* Read message. Return length of read message. */
-	error = sock_recvmsg(sock, &msg, iov_iter_count(&msg.msg_iter),
+	error = sock_recvmsg(sk, &msg, iov_iter_count(&msg.msg_iter),
 	                     msg.msg_flags);
 	if (error >= 0) {
 		ro.ro_datalen = error;
-		error = copy_to_user(uap->out, &ro, sizeof(ro)) != 0 ?
-		    -EFAULT : 0;
+		error = copy_to_user(out, &ro, sizeof(ro)) != 0 ? -EFAULT : 0;
 	}
 	kfree(iov);
 out:
@@ -90,8 +89,8 @@ out:
 	return cloudabi_convert_errno(error);
 }
 
-cloudabi_errno_t cloudabi64_sys_sock_send(
-    const struct cloudabi64_sys_sock_send_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi64_sys_sock_send(cloudabi_fd_t sock,
+    const cloudabi64_send_in_t __user *in, cloudabi64_send_out_t __user *out)
 {
 	struct capsicum_rights rights;
 	struct fd f_sock;
@@ -100,19 +99,19 @@ cloudabi_errno_t cloudabi64_sys_sock_send(
 	cloudabi64_send_out_t so = {};
 	struct iovec iovstack[UIO_FASTIOV];
 	struct iovec *iov = iovstack;
-	struct socket *sock;
+	struct socket *sk;
 	int error;
 
-	if (copy_from_user(&si, uap->in, sizeof(si)) != 0)
+	if (copy_from_user(&si, in, sizeof(si)) != 0)
 		return CLOUDABI_EFAULT;
 
 	/* Obtain socket. */
 	cap_rights_init(&rights, CAP_SEND);
-	f_sock = fdget_raw_rights(uap->s, &rights);
+	f_sock = fdget_raw_rights(sock, &rights);
 	if (IS_ERR(f_sock.file))
 		return cloudabi_convert_errno(PTR_ERR(f_sock.file));
-	sock = sock_from_file(f_sock.file, &error);
-	if (sock == NULL)
+	sk = sock_from_file(f_sock.file, &error);
+	if (sk == NULL)
 		goto out;
 
 	/* Process si_data and si_datalen. */
@@ -128,15 +127,14 @@ cloudabi_errno_t cloudabi64_sys_sock_send(
 	msg.msg_flags = MSG_NOSIGNAL;
 	if (si.si_flags & CLOUDABI_MSG_EOR)
 		msg.msg_flags |= MSG_EOR;
-	if (sock->file->f_flags & O_NONBLOCK)
+	if (sk->file->f_flags & O_NONBLOCK)
 		msg.msg_flags |= MSG_DONTWAIT;
 
 	/* Write message. Return length of written message. */
-	error = sock_sendmsg(sock, &msg);
+	error = sock_sendmsg(sk, &msg);
 	if (error >= 0) {
 		so.so_datalen = error;
-		error = copy_to_user(uap->out, &so, sizeof(so)) != 0 ?
-		    -EFAULT : 0;
+		error = copy_to_user(out, &so, sizeof(so)) != 0 ? -EFAULT : 0;
 	}
 	kfree(iov);
 out:

@@ -24,55 +24,55 @@
 #include "cloudabi_types_common.h"
 #include "cloudabi_util.h"
 
-cloudabi_errno_t cloudabi_sys_file_advise(
-    const struct cloudabi_sys_file_advise_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_file_advise(cloudabi_fd_t fd,
+    cloudabi_filesize_t offset, cloudabi_filesize_t len,
+    cloudabi_advice_t advice)
 {
-	int advice;
+	int kadvice;
 
-	switch (uap->advice) {
+	switch (advice) {
 	case CLOUDABI_ADVICE_DONTNEED:
-		advice = POSIX_FADV_DONTNEED;
+		kadvice = POSIX_FADV_DONTNEED;
 		break;
 	case CLOUDABI_ADVICE_NOREUSE:
-		advice = POSIX_FADV_NOREUSE;
+		kadvice = POSIX_FADV_NOREUSE;
 		break;
 	case CLOUDABI_ADVICE_NORMAL:
-		advice = POSIX_FADV_NORMAL;
+		kadvice = POSIX_FADV_NORMAL;
 		break;
 	case CLOUDABI_ADVICE_RANDOM:
-		advice = POSIX_FADV_RANDOM;
+		kadvice = POSIX_FADV_RANDOM;
 		break;
 	case CLOUDABI_ADVICE_SEQUENTIAL:
-		advice = POSIX_FADV_SEQUENTIAL;
+		kadvice = POSIX_FADV_SEQUENTIAL;
 		break;
 	case CLOUDABI_ADVICE_WILLNEED:
-		advice = POSIX_FADV_WILLNEED;
+		kadvice = POSIX_FADV_WILLNEED;
 		break;
 	default:
 		return CLOUDABI_EINVAL;
 	}
-	return cloudabi_convert_errno(sys_fadvise64_64(uap->fd, uap->offset,
-	    uap->len, advice));
+	return cloudabi_convert_errno(
+	    sys_fadvise64_64(fd, offset, len, kadvice));
 }
 
-cloudabi_errno_t cloudabi_sys_file_allocate(
-    const struct cloudabi_sys_file_allocate_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_file_allocate(cloudabi_fd_t fd,
+    cloudabi_filesize_t offset, cloudabi_filesize_t len)
 {
-	return cloudabi_convert_errno(sys_fallocate(uap->fd, 0, uap->offset,
-	    uap->len));
+	return cloudabi_convert_errno(sys_fallocate(fd, 0, offset, len));
 }
 
-cloudabi_errno_t cloudabi_sys_file_create(
-    const struct cloudabi_sys_file_create_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_file_create(cloudabi_fd_t fd,
+    const char __user *path, size_t pathlen, cloudabi_filetype_t type)
 {
 	struct dentry *dentry;
-	struct path path;
+	struct path kpath;
 	int error;
 	unsigned int lookup_flags;
 	struct capsicum_rights rights;
 	umode_t mode;
 
-	switch (uap->type) {
+	switch (type) {
 	case CLOUDABI_FILETYPE_DIRECTORY:
 		lookup_flags = LOOKUP_DIRECTORY;
 		cap_rights_init(&rights, CAP_LOOKUP, CAP_MKDIRAT);
@@ -86,32 +86,33 @@ cloudabi_errno_t cloudabi_sys_file_create(
 	}
 
 retry:
-	dentry = user_path_create_fixed_length(uap->fd, uap->path, uap->pathlen,
-	    &path, lookup_flags, &rights);
+	dentry = user_path_create_fixed_length(fd, path, pathlen, &kpath,
+	    lookup_flags, &rights);
 	if (IS_ERR(dentry)) {
 		error = PTR_ERR(dentry);
 		goto out;
 	}
 
 	mode = 0777;
-	if (!IS_POSIXACL(path.dentry->d_inode))
+	if (!IS_POSIXACL(kpath.dentry->d_inode))
 		mode &= ~current_umask();
 
-	switch (uap->type) {
+	switch (type) {
 	case CLOUDABI_FILETYPE_DIRECTORY:
-		error = security_path_mkdir(&path, dentry, mode);
+		error = security_path_mkdir(&kpath, dentry, mode);
 		if (error == 0)
-			error = vfs_mkdir(path.dentry->d_inode, dentry, mode);
+			error = vfs_mkdir(kpath.dentry->d_inode, dentry, mode);
 		break;
 	case CLOUDABI_FILETYPE_FIFO:
 		mode |= S_IFIFO;
-		error = security_path_mknod(&path, dentry, mode, 0);
+		error = security_path_mknod(&kpath, dentry, mode, 0);
 		if (error == 0)
-			error = vfs_mknod(path.dentry->d_inode, dentry, mode,0);
+			error = vfs_mknod(kpath.dentry->d_inode, dentry, mode,
+			    0);
 		break;
 	}
 
-	done_path_create(&path, dentry);
+	done_path_create(&kpath, dentry);
 	if (retry_estale(error, lookup_flags)) {
 		lookup_flags |= LOOKUP_REVAL;
 		goto retry;
@@ -120,8 +121,9 @@ out:
 	return cloudabi_convert_errno(error);
 }
 
-cloudabi_errno_t cloudabi_sys_file_link(
-    const struct cloudabi_sys_file_link_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_file_link(cloudabi_lookup_t fd1,
+    const char __user *path1, size_t path1len, cloudabi_fd_t fd2,
+    const char __user *path2, size_t path2len)
 {
 	struct dentry *new_dentry;
 	struct path old_path, new_path;
@@ -130,17 +132,17 @@ cloudabi_errno_t cloudabi_sys_file_link(
 	int how = 0;
 	int error;
 
-	if (uap->fd1.flags & CLOUDABI_LOOKUP_SYMLINK_FOLLOW)
+	if (fd1.flags & CLOUDABI_LOOKUP_SYMLINK_FOLLOW)
 		how |= LOOKUP_FOLLOW;
 	cap_rights_init(&rights, CAP_LINKAT_TARGET);
 retry:
-	error = user_path_at_fixed_length(uap->fd1.fd, uap->path1,
-	    uap->path1len, how, &old_path, CAP_LINKAT_SOURCE);
+	error = user_path_at_fixed_length(fd1.fd, path1, path1len, how,
+	    &old_path, CAP_LINKAT_SOURCE);
 	if (error != 0)
 		return cloudabi_convert_errno(error);
 
-	new_dentry = user_path_create_fixed_length(uap->fd2, uap->path2,
-	    uap->path2len, &new_path, how & LOOKUP_REVAL, &rights);
+	new_dentry = user_path_create_fixed_length(fd2, path2, path2len,
+	    &new_path, how & LOOKUP_REVAL, &rights);
 	error = PTR_ERR(new_dentry);
 	if (IS_ERR(new_dentry))
 		goto out;
@@ -174,27 +176,28 @@ out:
 	return cloudabi_convert_errno(error);
 }
 
-cloudabi_errno_t cloudabi_sys_file_open(
-    const struct cloudabi_sys_file_open_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_file_open(cloudabi_lookup_t dirfd,
+    const char __user *path, size_t pathlen, cloudabi_oflags_t oflags,
+    const cloudabi_fdstat_t __user *fds, cloudabi_fd_t *fd)
 {
 	struct capsicum_rights rights;
-	cloudabi_fdstat_t fds;
+	cloudabi_fdstat_t fdsb;
 	const struct capsicum_rights *actual_rights;
 	struct file *actual_file, *file, *installfile;
 	struct filename *name;
 	cloudabi_errno_t error;
-	long fd;
+	long newfd;
 	int flags;
 	bool read, write;
 
 	/* Copy in initial file descriptor properties. */
-	if (copy_from_user(&fds, uap->fds, sizeof(fds)) != 0)
+	if (copy_from_user(&fdsb, fds, sizeof(fdsb)) != 0)
 		return CLOUDABI_EFAULT;
 
 	/* Translate flags. */
 	flags = O_NOCTTY;
 #define	COPY_FLAG(flag) do {						\
-	if (uap->oflags & CLOUDABI_O_##flag)				\
+	if (oflags & CLOUDABI_O_##flag)					\
 		flags |= O_##flag;					\
 } while (0)
 	COPY_FLAG(CREAT);
@@ -203,53 +206,53 @@ cloudabi_errno_t cloudabi_sys_file_open(
 	COPY_FLAG(TRUNC);
 #undef COPY_FLAG
 #define	COPY_FLAG(flag) do {						\
-	if (fds.fs_flags & CLOUDABI_FDFLAG_##flag)			\
+	if (fdsb.fs_flags & CLOUDABI_FDFLAG_##flag)			\
 		flags |= O_##flag;					\
 } while (0)
 	COPY_FLAG(APPEND);
 	COPY_FLAG(DSYNC);
 	COPY_FLAG(NONBLOCK);
 #undef COPY_FLAG
-	if (fds.fs_flags & (CLOUDABI_FDFLAG_SYNC | CLOUDABI_FDFLAG_RSYNC))
+	if (fdsb.fs_flags & (CLOUDABI_FDFLAG_SYNC | CLOUDABI_FDFLAG_RSYNC))
 		flags |= O_SYNC;
-	if ((uap->fd.flags & CLOUDABI_LOOKUP_SYMLINK_FOLLOW) == 0)
+	if ((dirfd.flags & CLOUDABI_LOOKUP_SYMLINK_FOLLOW) == 0)
 		flags |= O_NOFOLLOW;
 
 	/* Convert rights to corresponding access mode. */
-	read = (fds.fs_rights_base & (CLOUDABI_RIGHT_FD_READ |
+	read = (fdsb.fs_rights_base & (CLOUDABI_RIGHT_FD_READ |
 	    CLOUDABI_RIGHT_FILE_READDIR | CLOUDABI_RIGHT_MEM_MAP_EXEC)) != 0;
-	write = (fds.fs_rights_base & (CLOUDABI_RIGHT_FD_DATASYNC |
+	write = (fdsb.fs_rights_base & (CLOUDABI_RIGHT_FD_DATASYNC |
 	    CLOUDABI_RIGHT_FD_WRITE | CLOUDABI_RIGHT_FILE_ALLOCATE |
 	    CLOUDABI_RIGHT_FILE_STAT_FPUT_SIZE)) != 0;
 	flags |= write ? read ? O_RDWR : O_WRONLY : O_RDONLY;
 
 	/* Open the file. */
-	fd = get_unused_fd_flags(flags);
-	if (fd < 0)
-		return cloudabi_convert_errno(fd);
-	name = getname_fixed_length(uap->path, uap->pathlen);
+	newfd = get_unused_fd_flags(flags);
+	if (newfd < 0)
+		return cloudabi_convert_errno(newfd);
+	name = getname_fixed_length(path, pathlen);
 	if (IS_ERR(name)) {
-		put_unused_fd(fd);
+		put_unused_fd(newfd);
 		return cloudabi_convert_errno(PTR_ERR(name));
 	}
-	file = file_open_name(uap->fd.fd, name, flags, 0777);
+	file = file_open_name(dirfd.fd, name, flags, 0777);
 	putname(name);
 	if (IS_ERR(file)) {
-		put_unused_fd(fd);
+		put_unused_fd(newfd);
 		return cloudabi_convert_errno(PTR_ERR(file));
 	}
 
 	/* Ensure that the new file has at least the rights we requested. */
 	error = cloudabi_convert_rights(
-	    fds.fs_rights_base | fds.fs_rights_inheriting, &rights);
+	    fdsb.fs_rights_base | fdsb.fs_rights_inheriting, &rights);
 	if (error != 0) {
-		put_unused_fd(fd);
+		put_unused_fd(newfd);
 		fput(file);
 		return error;
 	}
 	actual_file = capsicum_file_lookup(file, &rights, &actual_rights);
 	if (IS_ERR(actual_file)) {
-		put_unused_fd(fd);
+		put_unused_fd(newfd);
 		fput(file);
 		return cloudabi_convert_errno(PTR_ERR(actual_file));
 	}
@@ -261,11 +264,11 @@ cloudabi_errno_t cloudabi_sys_file_open(
 	/* Determine which rights should be placed on the new file. */
 	cloudabi_remove_conflicting_rights(
 	    cloudabi_convert_filetype(actual_file),
-	    &fds.fs_rights_base, &fds.fs_rights_inheriting);
-	cloudabi_convert_rights(fds.fs_rights_base | fds.fs_rights_inheriting,
+	    &fdsb.fs_rights_base, &fdsb.fs_rights_inheriting);
+	cloudabi_convert_rights(fdsb.fs_rights_base | fdsb.fs_rights_inheriting,
 	                        &rights);
 	if (error != 0) {
-		put_unused_fd(fd);
+		put_unused_fd(newfd);
 		fput(actual_file);
 		return error;
 	}
@@ -273,12 +276,12 @@ cloudabi_errno_t cloudabi_sys_file_open(
 	/* Restrict the rights on the new file descriptor. */
 	installfile = capsicum_file_install(&rights, actual_file);
 	if (IS_ERR(installfile)) {
-		put_unused_fd(fd);
+		put_unused_fd(newfd);
 		fput(actual_file);
 		return cloudabi_convert_errno(PTR_ERR(installfile));
 	}
-	fd_install(fd, installfile);
-	retval[0] = fd;
+	fd_install(newfd, installfile);
+	*fd = newfd;
 	return 0;
 }
 
@@ -380,16 +383,16 @@ static int filldir(struct dir_context *ctx, const char *name, int namlen,
 	return data->nbyte == 0;
 }
 
-cloudabi_errno_t cloudabi_sys_file_readdir(
-    const struct cloudabi_sys_file_readdir_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_file_readdir(cloudabi_fd_t fd, void __user *buf,
+    size_t nbyte, cloudabi_dircookie_t cookie, size_t *bufused)
 {
 	struct readdir_data data = {
 		.ctx = {
 			.actor = filldir,
-			.pos = uap->cookie,
+			.pos = cookie,
 		},
-		.buf = uap->buf,
-		.nbyte = uap->nbyte,
+		.buf = buf,
+		.nbyte = nbyte,
 		.previous_cookie = NULL,
 		.error = 0,
 	};
@@ -398,7 +401,7 @@ cloudabi_errno_t cloudabi_sys_file_readdir(
 	int error;
 
 	/* Obtain directory inode. */
-	f = fdgetr(uap->fd, CAP_READ);
+	f = fdgetr(fd, CAP_READ);
 	if (IS_ERR(f.file)) {
 		error = PTR_ERR(f.file);
 		goto out;
@@ -426,7 +429,7 @@ cloudabi_errno_t cloudabi_sys_file_readdir(
 	putdircookie(&data, data.ctx.pos);
 	if (error == 0)
 		error = data.error;
-	retval[0] = data.buf - (const char *)uap->buf;
+	*bufused = data.buf - (const char *)buf;
 	fsnotify_access(f.file);
 	file_accessed(f.file);
 unlock:
@@ -437,45 +440,46 @@ out:
 	return cloudabi_convert_errno(error);
 }
 
-cloudabi_errno_t cloudabi_sys_file_readlink(
-    const struct cloudabi_sys_file_readlink_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_file_readlink(cloudabi_fd_t fd,
+    const char __user *path, size_t pathlen, char __user *buf, size_t bufsize,
+    size_t *bufused)
 {
-	struct path path;
+	struct path kpath;
 	struct inode *inode;
 	unsigned int lookup_flags = 0;
 	int error;
 
 retry:
-	error = user_path_at_fixed_length(uap->fd, uap->path, uap->pathlen,
-	    lookup_flags, &path);
+	error = user_path_at_fixed_length(fd, path, pathlen, lookup_flags,
+	    &kpath);
 	if (error != 0)
 		return cloudabi_convert_errno(error);
 
-	inode = d_backing_inode(path.dentry);
+	inode = d_backing_inode(kpath.dentry);
 	if (inode->i_op->readlink == NULL) {
-		path_put(&path);
+		path_put(&kpath);
 		return CLOUDABI_EINVAL;
 	}
 
-	error = security_inode_readlink(path.dentry);
+	error = security_inode_readlink(kpath.dentry);
 	if (error == 0) {
-		touch_atime(&path);
-		error = inode->i_op->readlink(path.dentry, uap->buf,
-		    uap->bufsize);
+		touch_atime(&kpath);
+		error = inode->i_op->readlink(kpath.dentry, buf, bufsize);
 	}
-	path_put(&path);
+	path_put(&kpath);
 	if (retry_estale(error, lookup_flags)) {
 		lookup_flags |= LOOKUP_REVAL;
 		goto retry;
 	}
 	if (error < 0)
 		return cloudabi_convert_errno(error);
-	retval[0] = error;
+	*bufused = error;
 	return 0;
 }
 
-cloudabi_errno_t cloudabi_sys_file_rename(
-    const struct cloudabi_sys_file_rename_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_file_rename(cloudabi_fd_t oldfd,
+    const char __user *old, size_t oldlen, cloudabi_fd_t newfd,
+    const char __user *new, size_t newlen)
 {
 	struct dentry *old_dentry, *new_dentry;
 	struct dentry *trap;
@@ -496,7 +500,7 @@ cloudabi_errno_t cloudabi_sys_file_rename(
 
 retry:
 	from = user_path_parent_fixed_length(
-	    uap->oldfd, uap->old, uap->oldlen, &old_path, &old_last,
+	    oldfd, old, oldlen, &old_path, &old_last,
 	    &old_type, lookup_flags, &old_rights);
 	if (IS_ERR(from)) {
 		error = PTR_ERR(from);
@@ -504,7 +508,7 @@ retry:
 	}
 
 	to = user_path_parent_fixed_length(
-	    uap->newfd, uap->new, uap->newlen, &new_path, &new_last,
+	    newfd, new, newlen, &new_path, &new_last,
 	    &new_type, lookup_flags, &new_rights);
 	if (IS_ERR(to)) {
 		error = PTR_ERR(to);
@@ -659,80 +663,78 @@ convert_utimens_arguments(const cloudabi_filestat_t *fs,
 	}
 }
 
-cloudabi_errno_t cloudabi_sys_file_stat_fget(
-    const struct cloudabi_sys_file_stat_fget_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_file_stat_fget(cloudabi_fd_t fd,
+    cloudabi_filestat_t __user *buf)
 {
-	struct fd fd;
+	struct fd f;
 	struct kstat sb;
 	cloudabi_filestat_t csb;
 	cloudabi_filetype_t filetype;
 	int error;
 
-	fd = fdgetr_raw(uap->fd, CAP_FSTAT);
-	if (IS_ERR(fd.file))
-		return cloudabi_convert_errno(PTR_ERR(fd.file));
-	error = vfs_getattr(&fd.file->f_path, &sb);
-	filetype = cloudabi_convert_filetype(fd.file);
-	fdput(fd);
+	f = fdgetr_raw(fd, CAP_FSTAT);
+	if (IS_ERR(f.file))
+		return cloudabi_convert_errno(PTR_ERR(f.file));
+	error = vfs_getattr(&f.file->f_path, &sb);
+	filetype = cloudabi_convert_filetype(f.file);
+	fdput(f);
 	if (error != 0)
 		return cloudabi_convert_errno(error);
 
 	/* Convert results and return them. */
 	convert_stat(&sb, &csb);
 	csb.st_filetype = filetype;
-	return copy_to_user(uap->buf, &csb, sizeof(csb)) ? CLOUDABI_EFAULT : 0;
+	return copy_to_user(buf, &csb, sizeof(csb)) ? CLOUDABI_EFAULT : 0;
 }
 
-cloudabi_errno_t cloudabi_sys_file_stat_fput(
-    const struct cloudabi_sys_file_stat_fput_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_file_stat_fput(cloudabi_fd_t fd,
+    const cloudabi_filestat_t __user *buf, cloudabi_fsflags_t flags)
 {
 	cloudabi_filestat_t fs;
 
-	if (copy_from_user(&fs, uap->buf, sizeof(fs)) != 0)
+	if (copy_from_user(&fs, buf, sizeof(fs)) != 0)
 		return CLOUDABI_EFAULT;
 
-	if ((uap->flags & CLOUDABI_FILESTAT_SIZE) != 0) {
+	if ((flags & CLOUDABI_FILESTAT_SIZE) != 0) {
 		/* Call into sys_ftruncate() for file truncation. */
-		if ((uap->flags & ~CLOUDABI_FILESTAT_SIZE) != 0)
+		if ((flags & ~CLOUDABI_FILESTAT_SIZE) != 0)
 			return CLOUDABI_EINVAL;
-		return cloudabi_convert_errno(
-		    sys_ftruncate(uap->fd, fs.st_size));
-	} else if ((uap->flags & (CLOUDABI_FILESTAT_ATIM |
+		return cloudabi_convert_errno(sys_ftruncate(fd, fs.st_size));
+	} else if ((flags & (CLOUDABI_FILESTAT_ATIM |
 	    CLOUDABI_FILESTAT_ATIM_NOW | CLOUDABI_FILESTAT_MTIM |
 	    CLOUDABI_FILESTAT_MTIM_NOW)) != 0) {
 		struct timespec ts[2];
 
 		/* Call into do_utimes() for timestamp modification. */
-		if ((uap->flags & ~(CLOUDABI_FILESTAT_ATIM |
+		if ((flags & ~(CLOUDABI_FILESTAT_ATIM |
 		    CLOUDABI_FILESTAT_ATIM_NOW | CLOUDABI_FILESTAT_MTIM |
 		    CLOUDABI_FILESTAT_MTIM_NOW)) != 0)
 			return (EINVAL);
-		convert_utimens_arguments(&fs, uap->flags, ts);
-		return cloudabi_convert_errno(
-		    do_utimes(uap->fd, NULL, ts, 0));
+		convert_utimens_arguments(&fs, flags, ts);
+		return cloudabi_convert_errno(do_utimes(fd, NULL, ts, 0));
 	}
 	return CLOUDABI_EINVAL;
 }
 
-cloudabi_errno_t cloudabi_sys_file_stat_get(
-    const struct cloudabi_sys_file_stat_get_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_file_stat_get(cloudabi_lookup_t fd,
+    const char __user *path, size_t pathlen, cloudabi_filestat_t __user *buf)
 {
 	struct kstat sb;
-	struct path path;
+	struct path kpath;
 	cloudabi_filestat_t csb;
 	unsigned int lookup_flags;
 	int error;
 
-	lookup_flags = (uap->fd.flags & CLOUDABI_LOOKUP_SYMLINK_FOLLOW) != 0 ?
+	lookup_flags = (fd.flags & CLOUDABI_LOOKUP_SYMLINK_FOLLOW) != 0 ?
 	    LOOKUP_FOLLOW : 0;
 retry:
-	error = user_path_at_fixed_length(uap->fd.fd, uap->path, uap->pathlen,
-	    lookup_flags, &path, CAP_FSTATAT);
+	error = user_path_at_fixed_length(fd.fd, path, pathlen,
+	    lookup_flags, &kpath, CAP_FSTATAT);
 	if (error != 0)
 		return cloudabi_convert_errno(error);
 
-	error = vfs_getattr(&path, &sb);
-	path_put(&path);
+	error = vfs_getattr(&kpath, &sb);
+	path_put(&kpath);
 	if (retry_estale(error, lookup_flags)) {
 		lookup_flags |= LOOKUP_REVAL;
 		goto retry;
@@ -743,40 +745,41 @@ retry:
 	/* Convert results and return them. */
 	convert_stat(&sb, &csb);
 	csb.st_filetype = cloudabi_convert_filetype_simple(sb.mode);
-	return copy_to_user(uap->buf, &csb, sizeof(csb)) ? CLOUDABI_EFAULT : 0;
+	return copy_to_user(buf, &csb, sizeof(csb)) ? CLOUDABI_EFAULT : 0;
 }
 
-cloudabi_errno_t cloudabi_sys_file_stat_put(
-    const struct cloudabi_sys_file_stat_put_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_file_stat_put(cloudabi_lookup_t fd,
+    const char __user *path, size_t pathlen,
+    const cloudabi_filestat_t __user *buf, cloudabi_fsflags_t flags)
 {
 	cloudabi_filestat_t fs;
 	struct timespec ts[2];
-	struct path path;
+	struct path kpath;
 	int error, lookup_flags = 0;
 
 	/*
 	 * Only support timestamp modification for now, as there is no
 	 * truncateat().
 	 */
-	if ((uap->flags & ~(CLOUDABI_FILESTAT_ATIM |
+	if ((flags & ~(CLOUDABI_FILESTAT_ATIM |
 	    CLOUDABI_FILESTAT_ATIM_NOW | CLOUDABI_FILESTAT_MTIM |
 	    CLOUDABI_FILESTAT_MTIM_NOW)) != 0)
 		return CLOUDABI_EINVAL;
 
-	if (copy_from_user(&fs, uap->buf, sizeof(fs)) != 0)
+	if (copy_from_user(&fs, buf, sizeof(fs)) != 0)
 		return CLOUDABI_EFAULT;
-	convert_utimens_arguments(&fs, uap->flags, ts);
+	convert_utimens_arguments(&fs, flags, ts);
 
-	if (uap->fd.flags & CLOUDABI_LOOKUP_SYMLINK_FOLLOW)
+	if (fd.flags & CLOUDABI_LOOKUP_SYMLINK_FOLLOW)
 		lookup_flags |= LOOKUP_FOLLOW;
 retry:
-	error = user_path_at_fixed_length(uap->fd.fd, uap->path, uap->pathlen,
-	    lookup_flags, &path, CAP_FUTIMESAT);
+	error = user_path_at_fixed_length(fd.fd, path, pathlen, lookup_flags,
+	    &kpath, CAP_FUTIMESAT);
 	if (error)
 		goto out;
 
-	error = utimes_common(&path, ts);
-	path_put(&path);
+	error = utimes_common(&kpath, ts);
+	path_put(&kpath);
 	if (retry_estale(error, lookup_flags)) {
 		lookup_flags |= LOOKUP_REVAL;
 		goto retry;
@@ -786,31 +789,32 @@ out:
 	return cloudabi_convert_errno(error);
 }
 
-cloudabi_errno_t cloudabi_sys_file_symlink(
-    const struct cloudabi_sys_file_symlink_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_file_symlink(const char __user *path1,
+    size_t path1len, cloudabi_fd_t fd, const char __user *path2,
+    size_t path2len)
 {
 	int error;
 	struct filename *from;
 	struct dentry *dentry;
-	struct path path;
+	struct path kpath;
 	unsigned int lookup_flags = 0;
 	struct capsicum_rights rights;
 
-	from = getname_fixed_length(uap->path1, uap->path1len);
+	from = getname_fixed_length(path1, path1len);
 	if (IS_ERR(from))
 		return cloudabi_convert_errno(PTR_ERR(from));
 	cap_rights_init(&rights, CAP_SYMLINKAT);
 retry:
-	dentry = user_path_create_fixed_length(uap->fd2, uap->path2,
-	    uap->path2len, &path, lookup_flags, &rights);
+	dentry = user_path_create_fixed_length(fd, path2, path2len, &kpath,
+	    lookup_flags, &rights);
 	error = PTR_ERR(dentry);
 	if (IS_ERR(dentry))
 		goto out_putname;
 
-	error = security_path_symlink(&path, dentry, from->name);
+	error = security_path_symlink(&kpath, dentry, from->name);
 	if (error == 0)
-		error = vfs_symlink(path.dentry->d_inode, dentry, from->name);
-	done_path_create(&path, dentry);
+		error = vfs_symlink(kpath.dentry->d_inode, dentry, from->name);
+	done_path_create(&kpath, dentry);
 	if (retry_estale(error, lookup_flags)) {
 		lookup_flags |= LOOKUP_REVAL;
 		goto retry;
@@ -820,13 +824,13 @@ out_putname:
 	return cloudabi_convert_errno(error);
 }
 
-static cloudabi_errno_t do_unlink(
-    const struct cloudabi_sys_file_unlink_args *uap, unsigned long *retval)
+static cloudabi_errno_t do_unlink(cloudabi_fd_t fd, const char __user *path,
+    size_t pathlen)
 {
 	int error;
 	struct filename *name;
 	struct dentry *dentry;
-	struct path path;
+	struct path kpath;
 	struct qstr last;
 	int type;
 	struct inode *inode = NULL;
@@ -836,8 +840,8 @@ static cloudabi_errno_t do_unlink(
 
 	cap_rights_init(&rights, CAP_UNLINKAT);
 retry:
-	name = user_path_parent_fixed_length(uap->fd, uap->path, uap->pathlen,
-				&path, &last, &type, lookup_flags, &rights);
+	name = user_path_parent_fixed_length(fd, path, pathlen, &kpath, &last,
+				&type, lookup_flags, &rights);
 	if (IS_ERR(name))
 		return cloudabi_convert_errno(PTR_ERR(name));
 
@@ -845,12 +849,12 @@ retry:
 	if (type != LAST_NORM)
 		goto exit1;
 
-	error = mnt_want_write(path.mnt);
+	error = mnt_want_write(kpath.mnt);
 	if (error)
 		goto exit1;
 retry_deleg:
-	mutex_lock_nested(&path.dentry->d_inode->i_mutex, I_MUTEX_PARENT);
-	dentry = __lookup_hash(&last, path.dentry, lookup_flags);
+	mutex_lock_nested(&kpath.dentry->d_inode->i_mutex, I_MUTEX_PARENT);
+	dentry = __lookup_hash(&last, kpath.dentry, lookup_flags);
 	error = PTR_ERR(dentry);
 	if (!IS_ERR(dentry)) {
 		/* Why not before? Because we want correct error value */
@@ -860,16 +864,17 @@ retry_deleg:
 		if (d_is_negative(dentry))
 			goto slashes;
 		ihold(inode);
-		error = security_path_unlink(&path, dentry);
+		error = security_path_unlink(&kpath, dentry);
 		if (error)
 			goto exit2;
-		error = vfs_unlink(path.dentry->d_inode, dentry, &delegated_inode);
+		error = vfs_unlink(kpath.dentry->d_inode, dentry,
+		    &delegated_inode);
 		if (error == -EISDIR)
 			error = -EPERM;
 exit2:
 		dput(dentry);
 	}
-	mutex_unlock(&path.dentry->d_inode->i_mutex);
+	mutex_unlock(&kpath.dentry->d_inode->i_mutex);
 	if (inode)
 		iput(inode);	/* truncate the inode here */
 	inode = NULL;
@@ -878,9 +883,9 @@ exit2:
 		if (!error)
 			goto retry_deleg;
 	}
-	mnt_drop_write(path.mnt);
+	mnt_drop_write(kpath.mnt);
 exit1:
-	path_put(&path);
+	path_put(&kpath);
 	putname(name);
 	if (retry_estale(error, lookup_flags)) {
 		lookup_flags |= LOOKUP_REVAL;
@@ -899,23 +904,22 @@ slashes:
 	goto exit2;
 }
 
-static cloudabi_errno_t do_rmdir(
-    const struct cloudabi_sys_file_unlink_args *uap, unsigned long *retval)
+static cloudabi_errno_t do_rmdir(cloudabi_fd_t fd, const char __user *path,
+    size_t pathlen)
 {
 	int error = 0;
 	struct filename *name;
 	struct dentry *dentry;
 	struct capsicum_rights rights;
-	struct path path;
+	struct path kpath;
 	struct qstr last;
 	int type;
 	unsigned int lookup_flags = 0;
 
 	cap_rights_init(&rights, CAP_UNLINKAT);
 retry:
-	name = user_path_parent_fixed_length(uap->fd, uap->path,
-	                                     uap->pathlen, &path, &last, &type,
-	                                     lookup_flags, &rights);
+	name = user_path_parent_fixed_length(fd, path, pathlen, &kpath, &last,
+	                                     &type, lookup_flags, &rights);
 	if (IS_ERR(name))
 		return cloudabi_convert_errno(PTR_ERR(name));
 
@@ -931,12 +935,12 @@ retry:
 		goto exit1;
 	}
 
-	error = mnt_want_write(path.mnt);
+	error = mnt_want_write(kpath.mnt);
 	if (error)
 		goto exit1;
 
-	mutex_lock_nested(&path.dentry->d_inode->i_mutex, I_MUTEX_PARENT);
-	dentry = __lookup_hash(&last, path.dentry, lookup_flags);
+	mutex_lock_nested(&kpath.dentry->d_inode->i_mutex, I_MUTEX_PARENT);
+	dentry = __lookup_hash(&last, kpath.dentry, lookup_flags);
 	error = PTR_ERR(dentry);
 	if (IS_ERR(dentry))
 		goto exit2;
@@ -944,17 +948,17 @@ retry:
 		error = -ENOENT;
 		goto exit3;
 	}
-	error = security_path_rmdir(&path, dentry);
+	error = security_path_rmdir(&kpath, dentry);
 	if (error)
 		goto exit3;
-	error = vfs_rmdir(path.dentry->d_inode, dentry);
+	error = vfs_rmdir(kpath.dentry->d_inode, dentry);
 exit3:
 	dput(dentry);
 exit2:
-	mutex_unlock(&path.dentry->d_inode->i_mutex);
-	mnt_drop_write(path.mnt);
+	mutex_unlock(&kpath.dentry->d_inode->i_mutex);
+	mnt_drop_write(kpath.mnt);
 exit1:
-	path_put(&path);
+	path_put(&kpath);
 	putname(name);
 	if (retry_estale(error, lookup_flags)) {
 		lookup_flags |= LOOKUP_REVAL;
@@ -963,11 +967,15 @@ exit1:
 	return cloudabi_convert_errno(error);
 }
 
-cloudabi_errno_t cloudabi_sys_file_unlink(
-    const struct cloudabi_sys_file_unlink_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_file_unlink(cloudabi_fd_t fd,
+    const char __user *path, size_t pathlen, cloudabi_ulflags_t flags)
 {
-	if ((uap->flag & CLOUDABI_UNLINK_REMOVEDIR) != 0)
-		return do_rmdir(uap, retval);
-	else
-		return do_unlink(uap, retval);
+	switch (flags) {
+	case 0:
+		return do_unlink(fd, path, pathlen);
+	case CLOUDABI_UNLINK_REMOVEDIR:
+		return do_rmdir(fd, path, pathlen);
+	default:
+		return CLOUDABI_EINVAL;
+	}
 }

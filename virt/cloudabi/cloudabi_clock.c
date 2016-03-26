@@ -89,26 +89,26 @@ int cloudabi_clock_time_get(cloudabi_clockid_t clock_id,
 	return convert_timespec_to_timestamp(&ts, ret);
 }
 
-cloudabi_errno_t cloudabi_sys_clock_res_get(
-    const struct cloudabi_sys_clock_res_get_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_clock_res_get(cloudabi_clockid_t clock_id,
+    cloudabi_timestamp_t *resolution)
 {
 	int error;
-	clockid_t clockid;
+	clockid_t kclock_id;
 
-	error = cloudabi_convert_clockid(uap->clock_id, &clockid);
+	error = cloudabi_convert_clockid(clock_id, &kclock_id);
 	if (error == 0)
-		retval[0] = hrtimer_resolution;
+		*resolution = hrtimer_resolution;
 	return cloudabi_convert_errno(error);
 }
 
-cloudabi_errno_t cloudabi_sys_clock_time_get(
-    const struct cloudabi_sys_clock_time_get_args *uap, unsigned long *retval)
+cloudabi_errno_t cloudabi_sys_clock_time_get(cloudabi_clockid_t clock_id,
+    cloudabi_timestamp_t precision, cloudabi_timestamp_t *time)
 {
 	cloudabi_timestamp_t cts;
 	int error;
 
-	error = cloudabi_clock_time_get(uap->clock_id, &cts);
+	error = cloudabi_clock_time_get(clock_id, &cts);
 	if (error == 0)
-		retval[0] = cts;
+		*time = cts;
 	return cloudabi_convert_errno(error);
 }
