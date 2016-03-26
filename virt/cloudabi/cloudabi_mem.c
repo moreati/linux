@@ -31,8 +31,7 @@
 #include "cloudabi_types_common.h"
 #include "cloudabi_util.h"
 
-static cloudabi_errno_t
-convert_mprot(cloudabi_mprot_t in, int *out)
+static cloudabi_errno_t convert_mprot(cloudabi_mprot_t in, int *out)
 {
 	/* Unknown protection flags. */
 	if ((in & ~(CLOUDABI_PROT_EXEC | CLOUDABI_PROT_WRITE |
@@ -81,16 +80,14 @@ cloudabi_errno_t cloudabi_sys_mem_advise(void __user *addr, size_t len,
 	    sys_madvise((unsigned long)addr, len, behavior));
 }
 
-cloudabi_errno_t
-cloudabi_sys_mem_lock(const void __user *addr, size_t len)
+cloudabi_errno_t cloudabi_sys_mem_lock(const void __user *addr, size_t len)
 {
 	return cloudabi_convert_errno(sys_mlock((unsigned long)addr, len));
 }
 
-cloudabi_errno_t
-cloudabi_sys_mem_map(void __user *addr, size_t len, cloudabi_mprot_t prot,
-    cloudabi_mflags_t flags, cloudabi_fd_t fd, cloudabi_filesize_t off,
-    void __user **mem)
+cloudabi_errno_t cloudabi_sys_mem_map(void __user *addr, size_t len,
+    cloudabi_mprot_t prot, cloudabi_mflags_t flags, cloudabi_fd_t fd,
+    cloudabi_filesize_t off, void __user **mem)
 {
 	cloudabi_errno_t error;
 	unsigned long kflags;
@@ -141,8 +138,8 @@ cloudabi_errno_t cloudabi_sys_mem_protect(void __user *addr, size_t len,
 	    sys_mprotect((unsigned long)addr, len, kprot));
 }
 
-cloudabi_errno_t
-cloudabi_sys_mem_sync(void __user *addr, size_t len, cloudabi_msflags_t flags)
+cloudabi_errno_t cloudabi_sys_mem_sync(void __user *addr, size_t len,
+    cloudabi_msflags_t flags)
 {
 	int kflags;
 
