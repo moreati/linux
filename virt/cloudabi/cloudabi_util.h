@@ -75,4 +75,7 @@ int cloudabi_futex_lock_wrlock(struct task_struct *, cloudabi_lock_t *,
     cloudabi_mflags_t, cloudabi_clockid_t, cloudabi_timestamp_t,
     cloudabi_timestamp_t);
 
+cloudabi_errno_t cloudabi_poll_create(cloudabi_fd_t *fd);
+bool cloudabi_is_poll(struct file *);
+
 #endif

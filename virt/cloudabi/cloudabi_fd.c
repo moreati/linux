@@ -25,7 +25,6 @@
 
 #include <linux/anon_inodes.h>
 #include <linux/audit.h>
-#include <linux/eventpoll.h>
 #include <linux/fdtable.h>
 #include <linux/file.h>
 #include <linux/fs.h>
@@ -71,9 +70,9 @@
 	MAPPING(CLOUDABI_RIGHT_MEM_MAP, CAP_MMAP)			\
 	MAPPING(CLOUDABI_RIGHT_MEM_MAP_EXEC, CAP_MMAP_X)		\
 	MAPPING(CLOUDABI_RIGHT_POLL_FD_READWRITE, CAP_POLL_EVENT)	\
-	MAPPING(CLOUDABI_RIGHT_POLL_MODIFY, CAP_EPOLL_CTL)		\
+	MAPPING(CLOUDABI_RIGHT_POLL_MODIFY, CAP_KQUEUE_CHANGE)		\
 	MAPPING(CLOUDABI_RIGHT_POLL_PROC_TERMINATE, CAP_PDWAIT)		\
-	MAPPING(CLOUDABI_RIGHT_POLL_WAIT, CAP_POLL_EVENT)		\
+	MAPPING(CLOUDABI_RIGHT_POLL_WAIT, CAP_KQUEUE_EVENT)		\
 	MAPPING(CLOUDABI_RIGHT_PROC_EXEC, CAP_FEXECVE)			\
 	MAPPING(CLOUDABI_RIGHT_SOCK_ACCEPT, CAP_ACCEPT)			\
 	MAPPING(CLOUDABI_RIGHT_SOCK_BIND_DIRECTORY, CAP_BINDAT)		\
@@ -88,28 +87,6 @@
 cloudabi_errno_t cloudabi_sys_fd_close(cloudabi_fd_t fd)
 {
 	return cloudabi_convert_errno(sys_close(fd));
-}
-
-static cloudabi_errno_t fd_create_poll(cloudabi_fd_t *fd)
-{
-	struct capsicum_rights rights;
-	struct file *file, *installfile;
-	int newfd;
-
-	newfd = ep_alloc_file(0, &file);
-	if (newfd < 0)
-		return cloudabi_convert_errno(newfd);
-
-	cap_rights_init(&rights, CAP_EPOLL_CTL, CAP_FSTAT, CAP_POLL_EVENT);
-	installfile = capsicum_file_install(&rights, file);
-	if (IS_ERR(installfile)) {
-		/* TODO(ed): This is not right, I guess? */
-		fput(file);
-		return cloudabi_convert_errno(PTR_ERR(installfile));
-	}
-	fd_install(newfd, installfile);
-	*fd = newfd;
-	return 0;
 }
 
 static cloudabi_errno_t fd_create_shared_memory(cloudabi_fd_t *fd)
@@ -149,7 +126,7 @@ cloudabi_errno_t cloudabi_sys_fd_create1(cloudabi_filetype_t type,
 
 	switch (type) {
 	case CLOUDABI_FILETYPE_POLL:
-		return fd_create_poll(fd);
+		return cloudabi_poll_create(fd);
 	case CLOUDABI_FILETYPE_SHARED_MEMORY:
 		return fd_create_shared_memory(fd);
 	case CLOUDABI_FILETYPE_SOCKET_DGRAM:
@@ -413,7 +390,7 @@ cloudabi_filetype_t cloudabi_convert_filetype(struct file *file)
 	int err;
 
 	/* Specialized file descriptor types. */
-	if (is_file_epoll(file))
+	if (cloudabi_is_poll(file))
 		return CLOUDABI_FILETYPE_POLL;
 	if (is_file_clonefd(file))
 		return CLOUDABI_FILETYPE_PROCESS;
