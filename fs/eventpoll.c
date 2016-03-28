@@ -314,7 +314,7 @@ struct ctl_table epoll_table[] = {
 
 static const struct file_operations eventpoll_fops;
 
-bool is_file_epoll(struct file *f)
+static inline int is_file_epoll(struct file *f)
 {
 	return f->f_op == &eventpoll_fops;
 }
@@ -964,47 +964,6 @@ static int ep_alloc(struct eventpoll **pep)
 
 free_uid:
 	free_uid(user);
-	return error;
-}
-
-int ep_alloc_file(int flags, struct file **file)
-{
-	int error, fd;
-	struct eventpoll *ep = NULL;
-
-	/* Check the EPOLL_* constant for consistency.  */
-	BUILD_BUG_ON(EPOLL_CLOEXEC != O_CLOEXEC);
-
-	if (flags & ~EPOLL_CLOEXEC)
-		return -EINVAL;
-	/*
-	 * Create the internal data structure ("struct eventpoll").
-	 */
-	error = ep_alloc(&ep);
-	if (error < 0)
-		return error;
-	/*
-	 * Creates all the items needed to setup an eventpoll file. That is,
-	 * a file structure and a free file descriptor.
-	 */
-	fd = get_unused_fd_flags(O_RDWR | (flags & O_CLOEXEC));
-	if (fd < 0) {
-		error = fd;
-		goto out_free_ep;
-	}
-	*file = anon_inode_getfile("[eventpoll]", &eventpoll_fops, ep,
-				   O_RDWR | (flags & O_CLOEXEC));
-	if (IS_ERR(*file)) {
-		error = PTR_ERR(*file);
-		goto out_free_fd;
-	}
-	ep->file = *file;
-	return fd;
-
-out_free_fd:
-	put_unused_fd(fd);
-out_free_ep:
-	ep_free(ep);
 	return error;
 }
 
@@ -1833,13 +1792,45 @@ static void clear_tfile_check_list(void)
  */
 SYSCALL_DEFINE1(epoll_create1, int, flags)
 {
+	int error, fd;
+	struct eventpoll *ep = NULL;
 	struct file *file;
-	int fd;
 
-	fd = ep_alloc_file(flags, &file);
-	if (fd >= 0)
-		fd_install(fd, file);
+	/* Check the EPOLL_* constant for consistency.  */
+	BUILD_BUG_ON(EPOLL_CLOEXEC != O_CLOEXEC);
+
+	if (flags & ~EPOLL_CLOEXEC)
+		return -EINVAL;
+	/*
+	 * Create the internal data structure ("struct eventpoll").
+	 */
+	error = ep_alloc(&ep);
+	if (error < 0)
+		return error;
+	/*
+	 * Creates all the items needed to setup an eventpoll file. That is,
+	 * a file structure and a free file descriptor.
+	 */
+	fd = get_unused_fd_flags(O_RDWR | (flags & O_CLOEXEC));
+	if (fd < 0) {
+		error = fd;
+		goto out_free_ep;
+	}
+	file = anon_inode_getfile("[eventpoll]", &eventpoll_fops, ep,
+				 O_RDWR | (flags & O_CLOEXEC));
+	if (IS_ERR(file)) {
+		error = PTR_ERR(file);
+		goto out_free_fd;
+	}
+	ep->file = file;
+	fd_install(fd, file);
 	return fd;
+
+out_free_fd:
+	put_unused_fd(fd);
+out_free_ep:
+	ep_free(ep);
+	return error;
 }
 
 SYSCALL_DEFINE1(epoll_create, int, size)

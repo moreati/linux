@@ -13,15 +13,14 @@
 #ifndef _LINUX_EVENTPOLL_H
 #define _LINUX_EVENTPOLL_H
 
-#include <linux/fs.h>
-
 #include <uapi/linux/eventpoll.h>
 
-#ifdef CONFIG_EPOLL
 
-int ep_alloc_file(int flags, struct file **file);
-void ep_free_file(int fd, struct file *file);
-bool is_file_epoll(struct file *file);
+/* Forward declarations to avoid compiler errors */
+struct file;
+
+
+#ifdef CONFIG_EPOLL
 
 /* Used to initialize the epoll bits inside the "struct file" */
 static inline void eventpoll_init_file(struct file *file)
