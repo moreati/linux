@@ -66,13 +66,13 @@ void cloudabi_remove_conflicting_rights(cloudabi_filetype_t filetype,
  * sleep on a lock or condition variable.
  */
 int cloudabi_futex_condvar_wait(struct task_struct *, cloudabi_condvar_t *,
-    cloudabi_mflags_t, cloudabi_lock_t *, cloudabi_mflags_t, cloudabi_clockid_t,
+    cloudabi_scope_t, cloudabi_lock_t *, cloudabi_scope_t, cloudabi_clockid_t,
     cloudabi_timestamp_t, cloudabi_timestamp_t);
 int cloudabi_futex_lock_rdlock(struct task_struct *, cloudabi_lock_t *,
-    cloudabi_mflags_t, cloudabi_clockid_t, cloudabi_timestamp_t,
+    cloudabi_scope_t, cloudabi_clockid_t, cloudabi_timestamp_t,
     cloudabi_timestamp_t);
 int cloudabi_futex_lock_wrlock(struct task_struct *, cloudabi_lock_t *,
-    cloudabi_mflags_t, cloudabi_clockid_t, cloudabi_timestamp_t,
+    cloudabi_scope_t, cloudabi_clockid_t, cloudabi_timestamp_t,
     cloudabi_timestamp_t);
 
 cloudabi_errno_t cloudabi_poll_create(cloudabi_fd_t *fd);

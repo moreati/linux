@@ -48,6 +48,7 @@ typedef uint8_t cloudabi_advice_t;
 typedef uint32_t cloudabi_auxtype_t;
 #define CLOUDABI_AT_ARGDATA    256
 #define CLOUDABI_AT_ARGDATALEN 257
+#define CLOUDABI_AT_BASE         7
 #define CLOUDABI_AT_CANARY     258
 #define CLOUDABI_AT_CANARYLEN  259
 #define CLOUDABI_AT_NCPUS      260
@@ -298,6 +299,10 @@ typedef uint8_t cloudabi_sa_family_t;
 #define CLOUDABI_AF_INET   1
 #define CLOUDABI_AF_INET6  2
 #define CLOUDABI_AF_UNIX   3
+
+typedef uint8_t cloudabi_scope_t;
+#define CLOUDABI_SCOPE_PRIVATE 4
+#define CLOUDABI_SCOPE_SHARED  8
 
 typedef uint8_t cloudabi_sdflags_t;
 #define CLOUDABI_SHUT_RD 0x01

@@ -34,7 +34,7 @@
 #include "cloudabi_util.h"
 
 void cloudabi_sys_thread_exit(cloudabi_lock_t __user *lock,
-    cloudabi_mflags_t scope)
+    cloudabi_scope_t scope)
 {
         /* Wake up joining thread. */
 	cloudabi_sys_lock_unlock(lock, scope);

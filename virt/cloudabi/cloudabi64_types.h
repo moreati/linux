@@ -102,6 +102,8 @@ _Static_assert(offsetof(cloudabi64_iovec_t, iov_len) == 8, "Incorrect layout");
 _Static_assert(sizeof(cloudabi64_iovec_t) == 16, "Incorrect layout");
 _Static_assert(_Alignof(cloudabi64_iovec_t) == 8, "Incorrect layout");
 
+typedef void cloudabi64_processentry_t(uint64_t auxv);
+
 typedef struct {
 	_Alignas(8) uint64_t ri_data;
 	_Alignas(8) uint64_t ri_datalen;
@@ -154,8 +156,8 @@ typedef struct {
 		struct {
 			_Alignas(8) uint64_t condvar;
 			_Alignas(8) uint64_t lock;
-			_Alignas(1) cloudabi_mflags_t condvar_scope;
-			_Alignas(1) cloudabi_mflags_t lock_scope;
+			_Alignas(1) cloudabi_scope_t condvar_scope;
+			_Alignas(1) cloudabi_scope_t lock_scope;
 		} condvar;
 		struct {
 			_Alignas(4) cloudabi_fd_t fd;
@@ -163,7 +165,7 @@ typedef struct {
 		} fd_readwrite;
 		struct {
 			_Alignas(8) uint64_t lock;
-			_Alignas(1) cloudabi_mflags_t lock_scope;
+			_Alignas(1) cloudabi_scope_t lock_scope;
 		} lock;
 		struct {
 			_Alignas(4) cloudabi_fd_t fd;

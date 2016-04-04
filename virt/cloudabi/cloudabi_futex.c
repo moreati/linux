@@ -233,12 +233,12 @@ static int cloudabi_futex_condvar_wait_unlocked(struct futex_condvar *,
 
 static int
 futex_address_create(struct futex_address *fa, struct task_struct *td,
-    const void *object, cloudabi_mflags_t scope)
+    const void *object, cloudabi_scope_t scope)
 {
 	switch (scope) {
-	case CLOUDABI_MAP_PRIVATE:
+	case CLOUDABI_SCOPE_PRIVATE:
 		return get_futex_key(object, 0, &fa->fa_key, VERIFY_WRITE);
-	case CLOUDABI_MAP_SHARED:
+	case CLOUDABI_SCOPE_SHARED:
 		return get_futex_key(object, FLAGS_SHARED, &fa->fa_key,
 		                     VERIFY_WRITE);
 	default:
@@ -274,7 +274,7 @@ futex_condvar_assert(const struct futex_condvar *fc)
 
 static int
 futex_condvar_lookup(struct task_struct *td, const cloudabi_condvar_t *address,
-    cloudabi_mflags_t scope, struct futex_condvar **fcret)
+    cloudabi_scope_t scope, struct futex_condvar **fcret)
 {
 	struct futex_address fa_condvar;
 	struct futex_condvar *fc;
@@ -301,8 +301,8 @@ futex_condvar_lookup(struct task_struct *td, const cloudabi_condvar_t *address,
 
 static int
 futex_condvar_lookup_or_create(struct task_struct *td,
-    const cloudabi_condvar_t *condvar, cloudabi_mflags_t condvar_scope,
-    const cloudabi_lock_t *lock, cloudabi_mflags_t lock_scope,
+    const cloudabi_condvar_t *condvar, cloudabi_scope_t condvar_scope,
+    const cloudabi_lock_t *lock, cloudabi_scope_t lock_scope,
     struct futex_condvar **fcret)
 {
 	struct futex_address fa_condvar, fa_lock;
@@ -400,7 +400,7 @@ futex_lock_assert(const struct futex_lock *fl)
 
 static int
 futex_lock_lookup(struct task_struct *td, const cloudabi_lock_t *address,
-    cloudabi_mflags_t scope, struct futex_lock **flret)
+    cloudabi_scope_t scope, struct futex_lock **flret)
 {
 	struct futex_address fa;
 	int error;
@@ -1002,8 +1002,8 @@ futex_user_cmpxchg(uint32_t __user *obj, uint32_t cmp, uint32_t *old,
 
 int
 cloudabi_futex_condvar_wait(struct task_struct *td, cloudabi_condvar_t *condvar,
-    cloudabi_mflags_t condvar_scope, cloudabi_lock_t *lock,
-    cloudabi_mflags_t lock_scope, cloudabi_clockid_t clock_id,
+    cloudabi_scope_t condvar_scope, cloudabi_lock_t *lock,
+    cloudabi_scope_t lock_scope, cloudabi_clockid_t clock_id,
     cloudabi_timestamp_t timeout, cloudabi_timestamp_t precision)
 {
 	struct futex_condvar *fc;
@@ -1099,7 +1099,7 @@ cloudabi_futex_condvar_wait_unlocked(struct futex_condvar *fc,
 
 int
 cloudabi_futex_lock_rdlock(struct task_struct *td, cloudabi_lock_t *lock,
-    cloudabi_mflags_t scope, cloudabi_clockid_t clock_id,
+    cloudabi_scope_t scope, cloudabi_clockid_t clock_id,
     cloudabi_timestamp_t timeout, cloudabi_timestamp_t precision)
 {
 	struct futex_lock *fl;
@@ -1118,7 +1118,7 @@ cloudabi_futex_lock_rdlock(struct task_struct *td, cloudabi_lock_t *lock,
 
 int
 cloudabi_futex_lock_wrlock(struct task_struct *td, cloudabi_lock_t *lock,
-    cloudabi_mflags_t scope, cloudabi_clockid_t clock_id,
+    cloudabi_scope_t scope, cloudabi_clockid_t clock_id,
     cloudabi_timestamp_t timeout, cloudabi_timestamp_t precision)
 {
 	struct futex_lock *fl;
@@ -1142,7 +1142,7 @@ cloudabi_futex_lock_wrlock(struct task_struct *td, cloudabi_lock_t *lock,
  */
 
 cloudabi_errno_t cloudabi_sys_condvar_signal(cloudabi_condvar_t __user *condvar,
-    cloudabi_mflags_t scope, cloudabi_nthreads_t nwaiters)
+    cloudabi_scope_t scope, cloudabi_nthreads_t nwaiters)
 {
 	struct futex_condvar *fc;
 	struct futex_lock *fl;
@@ -1200,7 +1200,7 @@ cloudabi_errno_t cloudabi_sys_condvar_signal(cloudabi_condvar_t __user *condvar,
 }
 
 cloudabi_errno_t cloudabi_sys_lock_unlock(cloudabi_lock_t __user *lock,
-    cloudabi_mflags_t scope)
+    cloudabi_scope_t scope)
 {
 	struct futex_lock *fl;
 	struct task_struct *td;
