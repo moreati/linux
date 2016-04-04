@@ -93,7 +93,7 @@ static unsigned long cloudabi_binfmt_randomize_stack(void)
 }
 
 static unsigned long cloudabi_binfmt_phdr_map(struct file *file,
-    struct elf_phdr *phdr)
+    struct elf_phdr *phdr, unsigned long load_bias)
 {
 	unsigned long addr = ELF_PAGESTART(phdr->p_vaddr);
 	unsigned long off = phdr->p_offset - ELF_PAGEOFFSET(phdr->p_vaddr);
@@ -111,12 +111,12 @@ static unsigned long cloudabi_binfmt_phdr_map(struct file *file,
 		prot |= PROT_WRITE;
 	if (phdr->p_flags & PF_X)
 		prot |= PROT_EXEC;
-	return vm_mmap(file, addr, size, prot,
+	return vm_mmap(file, addr + load_bias, size, prot,
 	    MAP_PRIVATE | MAP_DENYWRITE | MAP_EXECUTABLE | MAP_FIXED, off);
 }
 
 static int cloudabi_binfmt_init_stack(struct linux_binprm *bprm,
-    struct elfhdr *hdr, unsigned long load_addr) {
+    struct elfhdr *hdr, unsigned long load_bias, unsigned long load_addr) {
 	struct mm_struct *mm = current->mm;
 	unsigned long argdatalen = mm->arg_end - mm->arg_start;
 	unsigned long p;
@@ -128,6 +128,7 @@ static int cloudabi_binfmt_init_stack(struct linux_binprm *bprm,
 		VAL(CLOUDABI_AT_ARGDATA, mm->arg_start),
 		VAL(CLOUDABI_AT_ARGDATALEN,
 		    argdatalen > 0 ? argdatalen - 1 : 0),
+		VAL(CLOUDABI_AT_BASE, load_bias),
 		/* TODO(ed): CLOUDABI_AT_CANARY{,LEN}. */
 		VAL(CLOUDABI_AT_PAGESZ, PAGE_SIZE),
 		PTR(CLOUDABI_AT_PHDR, load_addr + hdr->e_phoff),
@@ -165,7 +166,7 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 	struct pt_regs *regs;
 	size_t phdrslen;
 	unsigned long bss, brk, addr, entry, start_code, end_code, start_data,
-	    end_data, len, load_addr, p;
+	    end_data, len, load_addr, load_bias, p;
 	int argc, error, i;
 	bool load_addr_set;
 
@@ -180,7 +181,7 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 	    hdr->e_ident[EI_MAG2] != ELFMAG2 ||
 	    hdr->e_ident[EI_MAG3] != ELFMAG3 ||
 	    hdr->e_ident[EI_OSABI] != ELFOSABI_CLOUDABI ||
-	    hdr->e_type != ET_EXEC ||
+	    (hdr->e_type != ET_EXEC && hdr->e_type != ET_DYN) ||
 	    hdr->e_phentsize != sizeof(struct elf_phdr) ||
 	    hdr->e_phnum < 1 ||
 	    hdr->e_phnum > ELF_MIN_ALIGN / sizeof(struct elf_phdr))
@@ -235,6 +236,17 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 	mm = current->mm;
 	mm->start_stack = bprm->p;
 
+	if (hdr->e_type == ET_DYN) {
+		/* Position independent executable. */
+		load_bias = ELF_ET_DYN_BASE;
+		if (current->flags & PF_RANDOMIZE)
+			load_bias += arch_mmap_rnd();
+		load_bias = ELF_PAGEALIGN(load_bias);
+	} else {
+		/* Executable is not position independent. */
+		load_bias = 0;
+	}
+
 	bss = 0;
 	brk = 0;
 	start_code = ULONG_MAX;
@@ -264,7 +276,7 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 			}
 		}
 
-		addr = cloudabi_binfmt_phdr_map(file, phdr);
+		addr = cloudabi_binfmt_phdr_map(file, phdr, load_bias);
 		if (addr >= MAX_ADDR) {
 			error = IS_ERR((void *)addr) ?
 			    PTR_ERR((void *)addr) : -EINVAL;
@@ -272,7 +284,7 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 		}
 
 		if (!load_addr_set) {
-			load_addr = phdr->p_vaddr - phdr->p_offset;
+			load_addr = phdr->p_vaddr + load_bias - phdr->p_offset;
 			load_addr_set = true;
 		}
 
@@ -280,14 +292,14 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 		 * Compute the start/end addresses of code and data, to
 		 * be stored in the task's mm.
 		 */
-		addr = phdr->p_vaddr;
+		addr = phdr->p_vaddr + load_bias;
 		if (start_code > addr)
 			start_code = addr;
 		if (start_data < addr)
 			start_data = addr;
 
 		/* TODO(ed): Overflow checks! */
-		addr = phdr->p_vaddr + phdr->p_filesz;
+		addr = phdr->p_vaddr + load_bias + phdr->p_filesz;
 		if (bss < addr)
 			bss = addr;
 		if ((phdr->p_flags & PF_X) != 0 && end_code < addr)
@@ -295,7 +307,7 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 		if (end_data < addr)
 			end_data = addr;
 
-		addr = phdr->p_vaddr + phdr->p_memsz;
+		addr = phdr->p_vaddr + load_bias + phdr->p_memsz;
 		if (brk < addr)
 			brk = addr;
 	}
@@ -322,7 +334,7 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 	mm->arg_end = mm->env_start = mm->env_end = p;
 
 	install_exec_creds(bprm);
-	error = cloudabi_binfmt_init_stack(bprm, hdr, load_addr);
+	error = cloudabi_binfmt_init_stack(bprm, hdr, load_bias, load_addr);
 	if (error != 0)
 		goto out;
 
@@ -339,7 +351,7 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 #endif
 	}
 
-	entry = hdr->e_entry;
+	entry = hdr->e_entry + load_bias;
 	if (entry >= MAX_ADDR) {
 		error = -EINVAL;
 		goto out;
