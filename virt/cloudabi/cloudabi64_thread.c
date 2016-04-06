@@ -26,6 +26,10 @@
 #include <linux/sched.h>
 #include <linux/uaccess.h>
 
+#include <asm/desc.h>
+#include <asm/prctl.h>
+#include <asm/proto.h>
+
 #include "cloudabi_types_common.h"
 #include "cloudabi_util.h"
 #include "cloudabi64_syscalls.h"
@@ -39,13 +43,50 @@ cloudabi64_sys_thread_create(cloudabi64_threadattr_t __user *attr,
 	struct pt_regs *regs;
 	struct task_struct *child;
 	cloudabi_tid_t newtid;
+	uint64_t tcb;
+#ifdef __x86_64__
+	uint64_t curtcbptr, newtcbptr;
+#endif
 
 	if (copy_from_user(&kattr, attr, sizeof(kattr)) != 0)
 		return CLOUDABI_EFAULT;
 
+	/* Keep some space for the TCB at the top of the stack. */
+	tcb = rounddown(
+	    kattr.stack + kattr.stack_size - sizeof(cloudabi64_tcb_t),
+	    _Alignof(cloudabi64_tcb_t));
+
+#ifdef __x86_64__
+	/*
+	 * Set up the %fs base on x86-64 to point to a single element
+	 * array pointing to the TCB. This way userspace can modify the
+	 * TLS area by modifying %fs:0.
+	 */
+	newtcbptr = rounddown(tcb - sizeof(uint64_t), _Alignof(uint64_t));
+	if (copy_to_user((void __user *)newtcbptr, &tcb, sizeof(tcb)) != 0)
+		return CLOUDABI_EFAULT;
+
+	/*
+	 * No easy way to adjust the %fs base after the new thread has
+	 * been created. Temporarily set the %fs base of this thread to
+	 * the desired value. We restore it right after thread creation
+	 * has finished.
+	 */
+	if (current->thread.fsindex == FS_TLS_SEL)
+		curtcbptr = get_desc_base(&current->thread.tls_array[FS_TLS]);
+	else
+		rdmsrl(MSR_FS_BASE, curtcbptr);
+	do_arch_prctl(current, ARCH_SET_FS, newtcbptr);
+#else
+#error "Unknown architecture"
+#endif
+
 	/* Create a new thread. */
 	child = copy_process(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND |
 	    CLONE_THREAD, &clone4_args, NULL, 0, NULL);
+#ifdef __x86_64__
+	do_arch_prctl(current, ARCH_SET_FS, curtcbptr);
+#endif
 	if (IS_ERR(child))
 		return cloudabi_convert_errno(PTR_ERR(child));
 	newtid = cloudabi_gettid(child);
@@ -53,8 +94,7 @@ cloudabi64_sys_thread_create(cloudabi64_threadattr_t __user *attr,
 	/* Set initial registers. */
 	regs = task_pt_regs(child);
 #ifdef __x86_64__
-	/* TODO(ed): This should be solved more elegantly. */
-	regs->sp = rounddown(kattr.stack + kattr.stack_size, 16) - 8;
+	regs->sp = rounddown(newtcbptr, 16) - 8;
 	regs->ip = kattr.entry_point;
 	regs->di = newtid;
 	regs->si = kattr.argument;
