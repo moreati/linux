@@ -378,13 +378,17 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 #ifdef __x86_64__
 	regs->di = auxv_addr;
 	bprm->p = rounddown(bprm->p, 16) - 8;
-	do_arch_prctl(current, ARCH_SET_FS, tcb_addr);
 #else
 #error "Unknown architecture"
 #endif
 	start_thread(regs, entry, bprm->p);
 	set_tsk_thread_flag(current, TIF_CLOUDABI);
 	task_set_openat_beneath(current);
+
+#ifdef __x86_64__
+	/* Set up TLS. */
+	do_arch_prctl(current, ARCH_SET_FS, tcb_addr);
+#endif
 
 	error = 0;
 out:
