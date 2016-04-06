@@ -18,6 +18,8 @@
 #include <linux/random.h>
 #include <linux/slab.h>
 
+#include <asm/prctl.h>
+#include <asm/proto.h>
 #include <asm/uaccess.h>
 
 #include "cloudabi_util.h"
@@ -85,11 +87,7 @@ static unsigned long cloudabi_binfmt_randomize_stack(void)
 		random_variable &= STACK_RND_MASK;
 		random_variable <<= PAGE_SHIFT;
 	}
-#ifdef CONFIG_STACK_GROWSUP
-	return PAGE_ALIGN(STACK_TOP) + random_variable;
-#else
 	return PAGE_ALIGN(STACK_TOP) - random_variable;
-#endif
 }
 
 static unsigned long cloudabi_binfmt_phdr_map(struct file *file,
@@ -116,10 +114,14 @@ static unsigned long cloudabi_binfmt_phdr_map(struct file *file,
 }
 
 static int cloudabi_binfmt_init_stack(struct linux_binprm *bprm,
-    struct elfhdr *hdr, unsigned long load_bias, unsigned long load_addr) {
+    struct elfhdr *hdr, unsigned long load_bias, unsigned long load_addr,
+    unsigned long *auxv_addr, unsigned long *tcb_addr) {
 	struct mm_struct *mm = current->mm;
 	unsigned long argdatalen = mm->arg_end - mm->arg_start;
 	unsigned long p;
+#ifdef __x86_64__
+	uint64_t tcbptr;
+#endif
 
 	/* Create an auxiliary vector. */
 	cloudabi64_auxv_t auxv[] = {
@@ -144,17 +146,29 @@ static int cloudabi_binfmt_init_stack(struct linux_binprm *bprm,
 	 * and adjust the stack address accordingly.
 	 */
 	p = arch_align_stack(bprm->p);
-#ifdef CONFIG_STACK_GROWSUP
-	p = roundup(p, STACK_ALIGN);
-	bprm->p = p + roundup(sizeof(auxv), STACK_ALIGN);
-#else
-	bprm->p = p = rounddown(p, STACK_ALIGN) -
+	*auxv_addr = bprm->p = rounddown(p, STACK_ALIGN) -
 	    roundup(sizeof(auxv), STACK_ALIGN);
-#endif
-
-	if (copy_to_user((cloudabi64_auxv_t __user *)p, auxv,
-	    sizeof(auxv)) != 0)
+	if (copy_to_user((cloudabi64_auxv_t __user *)bprm->p, auxv,
+	                 sizeof(auxv)) != 0)
 		return -EFAULT;
+
+	/* Save some space for the TCB. */
+	*tcb_addr = bprm->p = rounddown(bprm->p - sizeof(cloudabi64_tcb_t),
+	                                _Alignof(cloudabi64_tcb_t));
+
+#ifdef __x86_64__
+	/*
+	 * On x86 the TCB is not referred to directly, but through %fs:0
+	 * instead. Write a pointer to the TCB to the stack, so the %fs
+	 * base can be set to that instead.
+	 */
+	tcbptr = *tcb_addr;
+	*tcb_addr = bprm->p = rounddown(bprm->p - sizeof(tcbptr),
+	                                _Alignof(tcbptr));
+	if (copy_to_user((uint64_t __user *)bprm->p, &tcbptr,
+	                 sizeof(tcbptr)) != 0)
+		return -EFAULT;
+#endif
 	return 0;
 }
 
@@ -166,7 +180,7 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 	struct pt_regs *regs;
 	size_t phdrslen;
 	unsigned long bss, brk, addr, entry, start_code, end_code, start_data,
-	    end_data, len, load_addr, load_bias, p;
+	    end_data, len, load_addr, load_bias, p, auxv_addr, tcb_addr;
 	int argc, error, i;
 	bool load_addr_set;
 
@@ -334,7 +348,8 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 	mm->arg_end = mm->env_start = mm->env_end = p;
 
 	install_exec_creds(bprm);
-	error = cloudabi_binfmt_init_stack(bprm, hdr, load_bias, load_addr);
+	error = cloudabi_binfmt_init_stack(bprm, hdr, load_bias, load_addr,
+	    &auxv_addr, &tcb_addr);
 	if (error != 0)
 		goto out;
 
@@ -361,9 +376,9 @@ static int cloudabi_binfmt_load_binary(struct linux_binprm *bprm) {
 	regs = current_pt_regs();
 	ELF_PLAT_INIT(regs, reloc_func_desc);
 #ifdef __x86_64__
-	/* TODO(ed): This should be solved more elegantly. */
-	regs->di = bprm->p;
+	regs->di = auxv_addr;
 	bprm->p = rounddown(bprm->p, 16) - 8;
+	do_arch_prctl(current, ARCH_SET_FS, tcb_addr);
 #else
 #error "Unknown architecture"
 #endif
